@@ -50,7 +50,9 @@ Override where py-fallback writes its python/pip shims.
 Auto-activate the nearest
 .I .venv
 when you cd into a directory tree that contains one, and deactivate on leaving.
-Only affects venvs it activated itself.
+The current directory wins: leaving every
+.I .venv
+scope deactivates whatever is active, including a venv activated by your editor.
 .TP
 .B py-fallback
 Create shims so bare

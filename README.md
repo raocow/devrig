@@ -42,7 +42,7 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all fea
 
 | Feature | What it does |
 |---|---|
-| `autovenv` | On every `cd`, activates the nearest `.venv` found walking up from the current dir, and deactivates on leaving. Opt-in by presence of a `.venv`, so it only fires in repos where you created one. Never touches a venv you activated by hand. |
+| `autovenv` | On every `cd`, activates the nearest `.venv` found walking up from the current dir, and deactivates on leaving. Opt-in by presence of a `.venv`, so it only fires in repos where you created one. The current directory wins: leaving every `.venv` scope deactivates whatever is active — including a venv auto-activated by your editor. |
 | `py-fallback` | Symlinks `python`→`python3` and `pip`→`pip3` in a managed shim dir appended to `PATH`. Real interpreters and active virtualenvs always take precedence. |
 
 ## Uninstall / disable
