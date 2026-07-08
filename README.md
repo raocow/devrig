@@ -49,7 +49,8 @@ ezenv uninstall            # remove all ezenv lines from ~/.zshrc
 brew uninstall ezenv
 ```
 
-`py-fallback` shims live in `~/.local/share/ezenv/shims` (override with `EZENV_SHIM_DIR`).
+`ezenv uninstall py-fallback` also removes its shim dir
+(`~/.local/share/ezenv/shims`, override with `EZENV_SHIM_DIR`), leaving nothing behind.
 
 ## License
 

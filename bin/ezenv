@@ -2,7 +2,7 @@
 # ezenv — opt-in shell environment helpers.
 set -eo pipefail
 
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
 # root (bin/..), so `share/ezenv` is found whether run from Homebrew or source.
@@ -92,16 +92,24 @@ cmd_install() {
 
 cmd_uninstall() {
   [ -f "$RC" ] || { echo "nothing to do (no $RC)"; return 0; }
-  local changed=0 f marker tmp
+  local changed=0 f marker tmp shim
   for f in $(expand_features "$@"); do
     marker="# ezenv:$f"
     if grep -qF "$marker" "$RC"; then
       tmp="$(mktemp "${RC}.ezenv.XXXXXX")"
-      grep -vF "$marker" "$RC" > "$tmp" && mv "$tmp" "$RC"
+      # `|| true`: grep exits 1 when it filters out the only line (empty output),
+      # which must not abort the removal or trip `set -e`.
+      grep -vF "$marker" "$RC" > "$tmp" || true
+      mv "$tmp" "$RC"
       echo "disabled: $f"
       changed=1
     else
       echo "not enabled: $f"
+    fi
+    # Clean up py-fallback's shim dir so uninstall leaves nothing behind.
+    if [ "$f" = py-fallback ]; then
+      shim="${EZENV_SHIM_DIR:-$HOME/.local/share/ezenv/shims}"
+      if [ -d "$shim" ]; then rm -rf "$shim"; echo "removed shims: $shim"; fi
     fi
   done
   [ "$changed" = 1 ] && echo "Restart your shell to apply:  exec zsh"
