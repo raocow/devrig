@@ -32,7 +32,7 @@ Usage:
 
 Features:
   autovenv       Auto-activate the nearest .venv when you cd into a repo
-  py-fallback    Make bare 'python'/'pip' resolve to python3/pip3
+  pyf            Make bare 'python'/'pip' resolve to python3/pip3
   all            Everything (default when no feature is given)
 
 Example:
@@ -53,20 +53,34 @@ share_dir() {
 
 feature_file() {
   case "$1" in
-    autovenv)    echo "autovenv.zsh" ;;
-    py-fallback) echo "py-fallback.zsh" ;;
-    *)           return 1 ;;
+    autovenv) echo "autovenv.zsh" ;;
+    pyf)      echo "pyf.zsh" ;;
+    *)        return 1 ;;
   esac
 }
 
-# Echo the requested features, expanding 'all' and defaulting to all when empty.
+# Echo the requested features, expanding 'all', defaulting to all when empty,
+# and normalizing legacy names ('py-fallback' -> 'pyf') to their canonical form.
 expand_features() {
-  if [ "$#" -eq 0 ]; then echo "autovenv py-fallback"; return; fi
+  if [ "$#" -eq 0 ]; then echo "autovenv pyf"; return; fi
   local f out=""
   for f in "$@"; do
-    if [ "$f" = all ]; then out="$out autovenv py-fallback"; else out="$out $f"; fi
+    case "$f" in
+      all)         out="$out autovenv pyf" ;;
+      py-fallback) out="$out pyf" ;;   # legacy alias
+      *)           out="$out $f" ;;
+    esac
   done
   echo "$out"
+}
+
+# True if a feature is enabled in $RC. Recognizes the legacy 'py-fallback'
+# marker so an rc written by an older ezenv is still detected as 'pyf'.
+feature_enabled() {
+  [ -f "$RC" ] || return 1
+  grep -qF "# ezenv:$1" "$RC" && return 0
+  [ "$1" = pyf ] && grep -qF "# ezenv:py-fallback" "$RC" && return 0
+  return 1
 }
 
 cmd_enable() {
@@ -75,13 +89,13 @@ cmd_enable() {
   local changed=0 f file marker
   for f in $(expand_features "$@"); do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, py-fallback, all)" >&2; continue
+      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, all)" >&2; continue
     fi
-    marker="# ezenv:$f"
-    if grep -qF "$marker" "$RC"; then
+    if feature_enabled "$f"; then
       echo "already enabled: $f"
       continue
     fi
+    marker="# ezenv:$f"
     printf 'source "%s/%s"  %s\n' "$sd" "$file" "$marker" >> "$RC"
     echo "enabled: $f"
     changed=1
@@ -92,22 +106,26 @@ cmd_enable() {
 
 cmd_disable() {
   [ -f "$RC" ] || { echo "nothing to do (no $RC)"; return 0; }
-  local changed=0 f marker tmp shim
+  local changed=0 f tmp shim
   for f in $(expand_features "$@"); do
-    marker="# ezenv:$f"
-    if grep -qF "$marker" "$RC"; then
+    if feature_enabled "$f"; then
       tmp="$(mktemp "${RC}.ezenv.XXXXXX")"
-      # `|| true`: grep exits 1 when it filters out the only line (empty output),
-      # which must not abort the removal or trip `set -e`.
-      grep -vF "$marker" "$RC" > "$tmp" || true
+      # Drop the feature's line(s); for pyf also drop the legacy py-fallback
+      # marker. `|| true`: grep exits 1 when it filters out the only line
+      # (empty output), which must not abort the removal or trip `set -e`.
+      if [ "$f" = pyf ]; then
+        grep -vF "# ezenv:pyf" "$RC" | grep -vF "# ezenv:py-fallback" > "$tmp" || true
+      else
+        grep -vF "# ezenv:$f" "$RC" > "$tmp" || true
+      fi
       mv "$tmp" "$RC"
       echo "disabled: $f"
       changed=1
     else
       echo "not enabled: $f"
     fi
-    # Clean up py-fallback's shim dir so uninstall leaves nothing behind.
-    if [ "$f" = py-fallback ]; then
+    # Clean up pyf's shim dir so disable leaves nothing behind.
+    if [ "$f" = pyf ]; then
       shim="${EZENV_SHIM_DIR:-$HOME/.local/share/ezenv/shims}"
       if [ -d "$shim" ]; then rm -rf "$shim"; echo "removed shims: $shim"; fi
     fi
@@ -118,10 +136,9 @@ cmd_disable() {
 
 cmd_status() {
   echo "rc file : $RC"
-  local f marker
-  for f in autovenv py-fallback; do
-    marker="# ezenv:$f"
-    if [ -f "$RC" ] && grep -qF "$marker" "$RC"; then
+  local f
+  for f in autovenv pyf; do
+    if feature_enabled "$f"; then
       echo "  $f : enabled"
     else
       echo "  $f : disabled"
@@ -144,7 +161,7 @@ cmd_init() {
   local f file
   for f in $(expand_features "$@"); do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, py-fallback, all)" >&2; return 1
+      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, all)" >&2; return 1
     fi
     printf 'source "%s/%s"\n' "$sd" "$file"
   done

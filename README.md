@@ -19,7 +19,7 @@ extra step by design, since you may not want auto-venv in every repo):
 
 ```bash
 ezenv enable autovenv        # per-repo .venv auto-activation
-ezenv enable py-fallback     # bare python/pip -> python3/pip3
+ezenv enable pyf             # bare python/pip -> python3/pip3
 ezenv enable                 # everything
 exec zsh                     # apply to the current shell
 ```
@@ -44,7 +44,7 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all fea
 | Feature | What it does |
 |---|---|
 | `autovenv` | On every `cd`, activates the nearest `.venv` found walking up from the current dir, and deactivates on leaving. Opt-in by presence of a `.venv`, so it only fires in repos where you created one. The current directory wins: leaving every `.venv` scope deactivates whatever is active — including a venv auto-activated by your editor. |
-| `py-fallback` | Symlinks `python`→`python3` and `pip`→`pip3` in a managed shim dir appended to `PATH`. Real interpreters and active virtualenvs always take precedence. |
+| `pyf` | Symlinks `python`→`python3` and `pip`→`pip3` in a managed shim dir appended to `PATH`. Real interpreters and active virtualenvs always take precedence. (Formerly `py-fallback`, still accepted as an alias.) |
 
 ## Disable / uninstall
 
@@ -53,7 +53,7 @@ ezenv disable             # remove all ezenv lines from ~/.zshrc
 brew uninstall ezenv
 ```
 
-`ezenv disable py-fallback` also removes its shim dir
+`ezenv disable pyf` also removes its shim dir
 (`~/.local/share/ezenv/shims`, override with `EZENV_SHIM_DIR`), leaving nothing behind.
 
 ## License

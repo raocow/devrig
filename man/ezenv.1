@@ -47,7 +47,7 @@ Override the rc file that enable/disable edit (default
 .IR ~/.zshrc ).
 .TP
 .B EZENV_SHIM_DIR
-Override where py-fallback writes its python/pip shims.
+Override where pyf writes its python/pip shims.
 .SH FEATURES
 .TP
 .B autovenv
@@ -58,7 +58,7 @@ The current directory wins: leaving every
 .I .venv
 scope deactivates whatever is active, including a venv activated by your editor.
 .TP
-.B py-fallback
+.B pyf
 Create shims so bare
 .B python
 and
@@ -74,7 +74,7 @@ Enable features, then reload the shell to apply:
 .nf
 .RS
 ezenv enable autovenv       # per-repo .venv auto-activation
-ezenv enable py-fallback    # bare python/pip -> python3/pip3
+ezenv enable pyf            # bare python/pip -> python3/pip3
 ezenv enable                # everything
 exec zsh                    # apply to the current shell
 .RE
@@ -85,7 +85,7 @@ Check and undo:
 .nf
 .RS
 ezenv status                # what's enabled
-ezenv disable py-fallback   # turn one off
+ezenv disable pyf           # turn one off
 .RE
 .fi
 .PP
@@ -96,7 +96,7 @@ edit):
 .nf
 .RS
 source "$(brew --prefix)/share/ezenv/autovenv.zsh"
-source "$(brew --prefix)/share/ezenv/py-fallback.zsh"
+source "$(brew --prefix)/share/ezenv/pyf.zsh"
 .RE
 .fi
 .SH SEE ALSO
