@@ -4,6 +4,9 @@ Opt-in shell environment helpers for a fresh Mac. Small zsh features you enable
 à la carte — no dotfile spelunking, just `brew install` and one command per
 feature you want.
 
+Basically, I don't like typing `3` after `python` or `pip`, and I especially don't
+like typing `source .venv/bin/activate`. Let's skip that step.
+
 ## Install
 
 ```bash
