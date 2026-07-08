@@ -1,4 +1,4 @@
-.TH EZENV 1 "2026" "ezenv 0.1.2" "User Commands"
+.TH EZENV 1 "2026" "ezenv 0.1.3" "User Commands"
 .SH NAME
 ezenv \- opt-in shell environment helpers
 .SH SYNOPSIS
@@ -10,19 +10,23 @@ ezenv \- opt-in shell environment helpers
 bundles small, independently enabled zsh helpers. Each feature is a script
 you source from your
 .IR ~/.zshrc ;
-install some, all, or none.
+enable some, all, or none.
 .SH COMMANDS
 .TP
-.B install " [feature...]"
+.B enable " [feature...]"
 Enable feature(s) by appending a source line to your
 .IR ~/.zshrc .
 Idempotent. With no feature, enables everything. Run
 .B exec zsh
 afterward to apply to the current shell.
+.RB ( install
+is accepted as an alias.)
 .TP
-.B uninstall " [feature...]"
+.B disable " [feature...]"
 Disable feature(s) by removing their lines from your
 .IR ~/.zshrc .
+.RB ( uninstall
+is accepted as an alias.)
 .TP
 .B status
 Show which features are currently enabled.
@@ -39,7 +43,7 @@ Print the version.
 .SH ENVIRONMENT
 .TP
 .B EZENV_RC
-Override the rc file that install/uninstall edit (default
+Override the rc file that enable/disable edit (default
 .IR ~/.zshrc ).
 .TP
 .B EZENV_SHIM_DIR
@@ -65,9 +69,35 @@ resolve to python3/pip3, without shadowing virtualenvs or other interpreters.
 .I <prefix>/share/ezenv/*.zsh
 The feature scripts you source.
 .SH EXAMPLES
+Enable features, then reload the shell to apply:
+.PP
 .nf
+.RS
+ezenv enable autovenv       # per-repo .venv auto-activation
+ezenv enable py-fallback    # bare python/pip -> python3/pip3
+ezenv enable                # everything
+exec zsh                    # apply to the current shell
+.RE
+.fi
+.PP
+Check and undo:
+.PP
+.nf
+.RS
+ezenv status                # what's enabled
+ezenv disable py-fallback   # turn one off
+.RE
+.fi
+.PP
+Wire it up by hand instead (no
+.IR ~/.zshrc
+edit):
+.PP
+.nf
+.RS
 source "$(brew --prefix)/share/ezenv/autovenv.zsh"
 source "$(brew --prefix)/share/ezenv/py-fallback.zsh"
+.RE
 .fi
 .SH SEE ALSO
 .BR brew (1)
