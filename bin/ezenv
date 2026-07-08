@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# ezenv — opt-in shell environment helpers.
+set -euo pipefail
+
+VERSION="0.1.0"
+
+# Resolve this script's real location (following symlinks), then the keg/repo
+# root (bin/..), so `share/ezenv` is found whether run from Homebrew or source.
+_src="${BASH_SOURCE[0]}"
+while [ -h "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [[ "$_src" != /* ]] && _src="$_dir/$_src"
+done
+BIN_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+SHARE="$(cd "$BIN_DIR/.." && pwd)/share/ezenv"
+
+usage() {
+  cat <<EOF
+ezenv $VERSION — opt-in shell environment helpers
+
+Usage:
+  ezenv init [feature...]   Print the source line(s) to add to ~/.zshrc
+  ezenv doctor              Show current environment status
+  ezenv version             Print version
+  ezenv help                Show this help
+
+Features:
+  autovenv       Auto-activate the nearest .venv when you cd into a repo
+  py-fallback    Make bare 'python'/'pip' resolve to python3/pip3
+  all            Everything (default)
+
+Example:
+  ezenv init autovenv >> ~/.zshrc && exec zsh
+EOF
+}
+
+cmd_init() {
+  local feats=("$@")
+  [ "${#feats[@]}" -eq 0 ] && feats=(all)
+  for f in "${feats[@]}"; do
+    case "$f" in
+      autovenv)    echo 'source "$(brew --prefix)/share/ezenv/autovenv.zsh"' ;;
+      py-fallback) echo 'source "$(brew --prefix)/share/ezenv/py-fallback.zsh"' ;;
+      all)         echo 'source "$(brew --prefix)/share/ezenv/ezenv.zsh"' ;;
+      *) echo "ezenv: unknown feature '$f' (try: autovenv, py-fallback, all)" >&2; return 1 ;;
+    esac
+  done
+}
+
+cmd_doctor() {
+  echo "ezenv $VERSION"
+  echo "share dir   : $SHARE"
+  echo "python      : $(command -v python || echo '<not found>')"
+  echo "python3     : $(command -v python3 || echo '<not found>')"
+  echo "pip         : $(command -v pip || echo '<not found>')"
+  echo "pip3        : $(command -v pip3 || echo '<not found>')"
+  echo "VIRTUAL_ENV : ${VIRTUAL_ENV:-<none>}"
+  local s
+  for s in autovenv py-fallback ezenv; do
+    if [ -f "$SHARE/$s.zsh" ]; then
+      echo "script      : $s.zsh present"
+    else
+      echo "script      : $s.zsh MISSING"
+    fi
+  done
+}
+
+case "${1:-help}" in
+  init)                 shift; cmd_init "$@" ;;
+  doctor)               cmd_doctor ;;
+  version|--version|-v) echo "ezenv $VERSION" ;;
+  help|--help|-h)       usage ;;
+  *)                    usage >&2; exit 1 ;;
+esac

@@ -1,0 +1,50 @@
+.TH EZENV 1 "2026" "ezenv 0.1.0" "User Commands"
+.SH NAME
+ezenv \- opt-in shell environment helpers
+.SH SYNOPSIS
+.B ezenv
+.I command
+.RI [ feature ...]
+.SH DESCRIPTION
+.B ezenv
+bundles small, independently enabled zsh helpers. Each feature is a script
+you source from your
+.IR ~/.zshrc ;
+install some, all, or none.
+.SH COMMANDS
+.TP
+.B init " [feature...]"
+Print the source line(s) to add to your shell rc. With no feature, prints the
+line that enables everything.
+.TP
+.B doctor
+Report the resolved python/pip, the active virtualenv, and which feature
+scripts are installed.
+.TP
+.B version
+Print the version.
+.SH FEATURES
+.TP
+.B autovenv
+Auto-activate the nearest
+.I .venv
+when you cd into a directory tree that contains one, and deactivate on leaving.
+Only affects venvs it activated itself.
+.TP
+.B py-fallback
+Create shims so bare
+.B python
+and
+.B pip
+resolve to python3/pip3, without shadowing virtualenvs or other interpreters.
+.SH FILES
+.TP
+.I <prefix>/share/ezenv/*.zsh
+The feature scripts you source.
+.SH EXAMPLES
+.nf
+source "$(brew --prefix)/share/ezenv/autovenv.zsh"
+source "$(brew --prefix)/share/ezenv/py-fallback.zsh"
+.fi
+.SH SEE ALSO
+.BR brew (1)
