@@ -1,4 +1,4 @@
-.TH EZENV 1 "2026" "ezenv 0.1.0" "User Commands"
+.TH EZENV 1 "2026" "ezenv 0.1.1" "User Commands"
 .SH NAME
 ezenv \- opt-in shell environment helpers
 .SH SYNOPSIS
@@ -13,16 +13,37 @@ you source from your
 install some, all, or none.
 .SH COMMANDS
 .TP
-.B init " [feature...]"
-Print the source line(s) to add to your shell rc. With no feature, prints the
-line that enables everything.
+.B install " [feature...]"
+Enable feature(s) by appending a source line to your
+.IR ~/.zshrc .
+Idempotent. With no feature, enables everything. Run
+.B exec zsh
+afterward to apply to the current shell.
+.TP
+.B uninstall " [feature...]"
+Disable feature(s) by removing their lines from your
+.IR ~/.zshrc .
+.TP
+.B status
+Show which features are currently enabled.
 .TP
 .B doctor
-Report the resolved python/pip, the active virtualenv, and which feature
-scripts are installed.
+Report the resolved python/pip and the active virtualenv.
+.TP
+.B init " [feature...]"
+Print the raw source line(s) for manual use or
+.BR eval .
 .TP
 .B version
 Print the version.
+.SH ENVIRONMENT
+.TP
+.B EZENV_RC
+Override the rc file that install/uninstall edit (default
+.IR ~/.zshrc ).
+.TP
+.B EZENV_SHIM_DIR
+Override where py-fallback writes its python/pip shims.
 .SH FEATURES
 .TP
 .B autovenv

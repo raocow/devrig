@@ -1,8 +1,8 @@
 # ezenv
 
 Opt-in shell environment helpers for a fresh Mac. Small zsh features you enable
-à la carte from your `~/.zshrc` — no dotfile spelunking, just `brew install` and
-a `source` line for each feature you want.
+à la carte — no dotfile spelunking, just `brew install` and one command per
+feature you want.
 
 ## Install
 
@@ -11,21 +11,29 @@ brew tap raocow/tap      # once
 brew install ezenv
 ```
 
-Then add the features you want to `~/.zshrc` (an extra step by design — you may
-not want auto-venv in every repo):
+Then enable the features you want (this writes a line to your `~/.zshrc` — an
+extra step by design, since you may not want auto-venv in every repo):
 
-```sh
-source "$(brew --prefix)/share/ezenv/autovenv.zsh"     # per-repo .venv auto-activation
-source "$(brew --prefix)/share/ezenv/py-fallback.zsh"  # bare python/pip -> python3/pip3
+```bash
+ezenv install autovenv       # per-repo .venv auto-activation
+ezenv install py-fallback    # bare python/pip -> python3/pip3
+ezenv install                # everything
+exec zsh                     # apply to the current shell
 ```
 
-Or enable everything:
+`ezenv status` shows what's enabled; `ezenv uninstall <feature>` removes it;
+`ezenv doctor` shows the resolved python/pip/venv.
+
+<details>
+<summary>Manual / advanced</summary>
+
+`ezenv install` just appends a `source` line. To wire it up yourself instead:
 
 ```sh
-source "$(brew --prefix)/share/ezenv/ezenv.zsh"
+eval "$(ezenv init autovenv)"                      # in ~/.zshrc
+source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all features)
 ```
-
-`ezenv init <feature>` prints the exact line; `ezenv doctor` shows current status.
+</details>
 
 ## Features
 
@@ -36,7 +44,11 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"
 
 ## Uninstall / disable
 
-Remove the `source` lines from `~/.zshrc`, then `brew uninstall ezenv`.
+```bash
+ezenv uninstall            # remove all ezenv lines from ~/.zshrc
+brew uninstall ezenv
+```
+
 `py-fallback` shims live in `~/.local/share/ezenv/shims` (override with `EZENV_SHIM_DIR`).
 
 ## License
