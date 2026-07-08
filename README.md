@@ -7,7 +7,7 @@ a `source` line for each feature you want.
 ## Install
 
 ```bash
-brew tap alexrao2000/tap      # once
+brew tap raocow/tap      # once
 brew install ezenv
 ```
 
