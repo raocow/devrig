@@ -49,11 +49,13 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all fea
 ## Disable / uninstall
 
 ```bash
-ezenv disable             # remove all ezenv lines from ~/.zshrc
+ezenv disable autovenv    # turn off one feature
+ezenv disable all         # remove all ezenv lines from ~/.zshrc
 brew uninstall ezenv
 ```
 
-`ezenv disable pyf` also removes its shim dir
+A feature (or `all`) is required — a bare `ezenv disable` won't wipe everything
+by accident. `ezenv disable pyf` also removes its shim dir
 (`~/.local/share/ezenv/shims`, override with `EZENV_SHIM_DIR`), leaving nothing behind.
 
 ## License

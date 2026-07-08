@@ -1,4 +1,4 @@
-.TH EZENV 1 "2026" "ezenv 0.1.3" "User Commands"
+.TH EZENV 1 "2026" "ezenv 0.1.4" "User Commands"
 .SH NAME
 ezenv \- opt-in shell environment helpers
 .SH SYNOPSIS
@@ -22,9 +22,14 @@ afterward to apply to the current shell.
 .RB ( install
 is accepted as an alias.)
 .TP
-.B disable " [feature...]"
-Disable feature(s) by removing their lines from your
+.B disable " <feature|all>"
+Disable a feature by removing its line from your
 .IR ~/.zshrc .
+A feature (or
+.BR all )
+is required \(em a bare
+.B disable
+will not silently remove everything.
 .RB ( uninstall
 is accepted as an alias.)
 .TP
