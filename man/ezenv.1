@@ -1,4 +1,4 @@
-.TH EZENV 1 "2026" "ezenv 0.1.4" "User Commands"
+.TH EZENV 1 "2026" "ezenv 0.2.0" "User Commands"
 .SH NAME
 ezenv \- opt-in shell environment helpers
 .SH SYNOPSIS
@@ -62,6 +62,15 @@ when you cd into a directory tree that contains one, and deactivate on leaving.
 The current directory wins: leaving every
 .I .venv
 scope deactivates whatever is active, including a venv activated by your editor.
+On
+.BR "ezenv enable autovenv" ,
+it offers (with a prompt) to disable VSCode/Cursor's own terminal venv
+auto-activation
+.RB ( python.terminal.activateEnvironment )
+in your user settings, so autovenv is the sole venv manager;
+.B "ezenv disable autovenv"
+offers to undo it. Those edits are backed up alongside the file
+.RB ( .ezenv-bak ).
 .TP
 .B pyf
 Create shims so bare
