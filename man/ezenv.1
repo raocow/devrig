@@ -79,21 +79,26 @@ and
 .B pip
 resolve to python3/pip3, without shadowing virtualenvs or other interpreters.
 .TP
-.B dotenv
-Add a
-.B dotenv
+.B envup
+Add an
+.B envup
 shell function that exports a
 .I .env
 file into the current shell \(em
-.B dotenv
+.B envup
 loads
 .IR ./.env ,
-.B "dotenv FILE"
+.B "envup FILE"
 a specific one. Shorthand for
 .BR "set -a; source <file>; set +a" .
 It is a sourced function rather than an
 .B ezenv
 subcommand because a subprocess cannot export variables back into your shell.
+Named
+.B envup
+rather than
+.B dotenv
+to avoid shadowing the python-dotenv CLI.
 .SH FILES
 .TP
 .I <prefix>/share/ezenv/*.zsh
