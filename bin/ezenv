@@ -2,7 +2,7 @@
 # ezenv — opt-in shell environment helpers.
 set -eo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
 # root (bin/..), so `share/ezenv` is found whether run from Homebrew or source.
@@ -33,6 +33,7 @@ Usage:
 Features:
   autovenv       Auto-activate the nearest .venv when you cd into a repo
   pyf            Make bare 'python'/'pip' resolve to python3/pip3
+  dotenv         Add a 'dotenv' command: export a .env into the current shell
   all            Everything (default when no feature is given)
 
 Example:
@@ -55,6 +56,7 @@ feature_file() {
   case "$1" in
     autovenv) echo "autovenv.zsh" ;;
     pyf)      echo "pyf.zsh" ;;
+    dotenv)   echo "dotenv.zsh" ;;
     *)        return 1 ;;
   esac
 }
@@ -62,11 +64,11 @@ feature_file() {
 # Echo the requested features, expanding 'all', defaulting to all when empty,
 # and normalizing legacy names ('py-fallback' -> 'pyf') to their canonical form.
 expand_features() {
-  if [ "$#" -eq 0 ]; then echo "autovenv pyf"; return; fi
+  if [ "$#" -eq 0 ]; then echo "autovenv pyf dotenv"; return; fi
   local f out=""
   for f in "$@"; do
     case "$f" in
-      all)         out="$out autovenv pyf" ;;
+      all)         out="$out autovenv pyf dotenv" ;;
       py-fallback) out="$out pyf" ;;   # legacy alias
       *)           out="$out $f" ;;
     esac
@@ -160,7 +162,7 @@ cmd_enable() {
   local changed=0 f file marker feats; feats="$(expand_features "$@")"
   for f in $feats; do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, all)" >&2; continue
+      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, dotenv, all)" >&2; continue
     fi
     if feature_enabled "$f"; then
       echo "already enabled: $f"
@@ -182,7 +184,7 @@ cmd_disable() {
   # Require an explicit feature, so a bare `ezenv disable` can't wipe everything
   # by accident. Use `ezenv disable all` to turn them all off.
   if [ "$#" -eq 0 ]; then
-    echo "ezenv: pick a feature to disable: autovenv, pyf (or 'all')" >&2
+    echo "ezenv: pick a feature to disable: autovenv, pyf, dotenv (or 'all')" >&2
     return 2
   fi
   [ -f "$RC" ] || { echo "nothing to do (no $RC)"; return 0; }
@@ -220,7 +222,7 @@ cmd_disable() {
 cmd_status() {
   echo "rc file : $RC"
   local f
-  for f in autovenv pyf; do
+  for f in autovenv pyf dotenv; do
     if feature_enabled "$f"; then
       echo "  $f : enabled"
     else
@@ -244,7 +246,7 @@ cmd_init() {
   local f file
   for f in $(expand_features "$@"); do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, all)" >&2; return 1
+      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, dotenv, all)" >&2; return 1
     fi
     printf 'source "%s/%s"\n' "$sd" "$file"
   done
