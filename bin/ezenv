@@ -27,6 +27,7 @@ Usage:
   ezenv status                   Show which features are enabled
   ezenv doctor                   Show current environment (python/pip/venv)
   ezenv init [feature...]        Print the raw source line(s) — for eval or manual use
+  ezenv account <cmd>            Tie directories to different git/ssh accounts
   ezenv version                  Print version
   ezenv help                     Show this help
 
@@ -36,8 +37,17 @@ Features:
   envup          Add an 'envup' command: export a .env into the current shell
   all            Everything (default when no feature is given)
 
+Accounts:
+  ezenv account add <name> --email <email> [--name <git name>]
+                           [--host <host>] [--dir <path>]
+  ezenv account bind <name> <dir>   Use <name>'s identity in <dir> and below
+  ezenv account list                Show accounts and their bound directories
+  ezenv account key <name>          Print the public key to paste into the host
+  ezenv account check               Verify every binding still actually applies
+
 Example:
   ezenv enable autovenv      # then: exec zsh
+  ezenv account add work --email me@work.com --dir ~/code/work
 EOF
 }
 
@@ -156,6 +166,302 @@ _editor_restore() {  # disable autovenv → offer to undo the defer
   esac
 }
 
+# --- Accounts: per-directory git/ssh identity -------------------------------
+# Unlike the features above, this is NOT a shell feature: nothing is sourced.
+# Git reads `includeIf` out of ~/.gitconfig and ssh reads the `Host` alias out
+# of ~/.ssh/config on their own, so the whole feature is persistent config plus
+# a keypair. That's why it gets its own `ezenv account` verb rather than
+# enable/disable — the state is a registry of N accounts and their directory
+# bindings, not one on/off marker line.
+#
+# Two rules hold everywhere below:
+#   1. We only ever APPEND, wrapped in BEGIN/END sentinels. A botched regex
+#      rewrite of an ssh config can lock you out of every host you use, so we
+#      never rewrite in place — the sentinels are what make exact removal
+#      possible later.
+#   2. We never clobber. An existing key, ssh block, or identity file is left
+#      alone and reported, because all three are things you may have hand-tuned.
+
+SSH_CONFIG="${EZENV_SSH_CONFIG:-$HOME/.ssh/config}"
+GITCONFIG="${EZENV_GITCONFIG:-$HOME/.gitconfig}"
+KEY_DIR="${EZENV_SSH_KEY_DIR:-$HOME/.ssh}"
+
+# The name lands in a filename, an ssh Host alias, and a config path, so keep it
+# to characters that are safe and quote-free in all three.
+_acct_valid_name() {
+  case "$1" in
+    ""|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  return 0
+}
+
+_acct_key()      { echo "$KEY_DIR/id_ed25519_$1"; }
+# Identity file sits beside the gitconfig it's included from, so an EZENV_GITCONFIG
+# override (tests) keeps the whole set together instead of writing into real $HOME.
+_acct_identity() { echo "$(dirname "$GITCONFIG")/.gitconfig-$1"; }
+
+_acct_names() {  # every registered account, one per line
+  [ -f "$SSH_CONFIG" ] || return 0
+  sed -n 's/^# ezenv:account:\([^ ]*\) BEGIN.*/\1/p' "$SSH_CONFIG"
+}
+
+_acct_binds() {  # "<name> <dir>" per binding
+  [ -f "$GITCONFIG" ] || return 0
+  sed -n 's/^# ezenv:bind:\([^ ]*\) BEGIN \(.*\)$/\1 \2/p' "$GITCONFIG"
+}
+
+# Absolute PHYSICAL path, without requiring the directory to exist yet (you often
+# want to bind a directory you are about to clone into).
+#
+# The physical part matters: git resolves a repository's real path before testing
+# it against `gitdir:`, so a pattern containing a symlink never matches. On macOS
+# /tmp and /var are themselves symlinks (/private/tmp, /private/var), so binding
+# a path under either would silently never apply. Resolve what exists, keep the
+# rest as given.
+_acct_abspath() {
+  local p="${1%/}" tail=""
+  case "$p" in
+    /*) ;;
+     *) p="$PWD/$p" ;;
+  esac
+  # Walk up until we find a directory that exists, resolve it, re-append the rest.
+  while [ -n "$p" ] && [ ! -d "$p" ]; do
+    tail="${p##*/}${tail:+/$tail}"
+    p="${p%/*}"
+  done
+  [ -n "$p" ] || { echo "/$tail"; return; }
+  p="$(cd "$p" 2>/dev/null && pwd -P)" || return 1
+  echo "${p%/}${tail:+/$tail}"
+}
+
+acct_add() {
+  local name="${1:-}"; shift 2>/dev/null || true
+  local email="" gitname="" host="github.com" dir=""
+  if ! _acct_valid_name "$name"; then
+    echo "ezenv: account name required (letters, digits, . _ - only)" >&2; return 2
+  fi
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --email) email="${2:-}"; shift 2 || return 2 ;;
+      --name)  gitname="${2:-}"; shift 2 || return 2 ;;
+      --host)  host="${2:-}"; shift 2 || return 2 ;;
+      --dir)   dir="${2:-}"; shift 2 || return 2 ;;
+      *) echo "ezenv: unknown option '$1'" >&2; return 2 ;;
+    esac
+  done
+  [ -n "$email" ] || { echo "ezenv: --email is required" >&2; return 2; }
+  [ -n "$host" ]  || { echo "ezenv: --host cannot be empty" >&2; return 2; }
+  gitname="${gitname:-$name}"
+
+  local key alias identity
+  key="$(_acct_key "$name")"; alias="$host-$name"; identity="$(_acct_identity "$name")"
+
+  # ssh refuses to use a key or config dir with loose permissions.
+  mkdir -p "$KEY_DIR" && chmod 700 "$KEY_DIR"
+  mkdir -p "$(dirname "$SSH_CONFIG")"
+
+  if [ -f "$key" ]; then
+    echo "reusing existing key: ${key/#$HOME/~}"
+  else
+    # No passphrase: this is a convenience tool and a passphrase would need agent
+    # plumbing on every clone. The key is protected by file permissions only.
+    ssh-keygen -t ed25519 -C "$name" -f "$key" -N "" -q
+    echo "created key: ${key/#$HOME/~}"
+  fi
+
+  if grep -qF "# ezenv:account:$name BEGIN" "$SSH_CONFIG" 2>/dev/null; then
+    echo "ssh host alias already present: $alias"
+  else
+    touch "$SSH_CONFIG" && chmod 600 "$SSH_CONFIG"
+    {
+      echo ""
+      echo "# ezenv:account:$name BEGIN"
+      echo "Host $alias"
+      echo "  HostName $host"
+      echo "  User git"
+      echo "  IdentityFile $key"
+      # Without IdentitiesOnly, ssh offers every key the agent holds and the
+      # wrong account can answer first.
+      echo "  IdentitiesOnly yes"
+      echo "  AddKeysToAgent yes"
+      # UseKeychain is a macOS-only keyword; elsewhere ssh errors on it.
+      [ "$(uname -s)" = Darwin ] && echo "  UseKeychain yes"
+      echo "# ezenv:account:$name END"
+    } >> "$SSH_CONFIG"
+    echo "added ssh host alias: $alias"
+  fi
+
+  if [ -f "$identity" ]; then
+    echo "keeping existing identity file: ${identity/#$HOME/~}"
+  else
+    printf '[user]\n\tname = %s\n\temail = %s\n' "$gitname" "$email" > "$identity"
+    echo "wrote identity: ${identity/#$HOME/~}  ($gitname <$email>)"
+  fi
+
+  [ -n "$dir" ] && acct_bind "$name" "$dir"
+
+  echo ""
+  echo "Add this key to the $host account '$name':"
+  echo ""
+  cat "$key.pub"
+  echo ""
+  echo "Then clone through the alias so the right key is used:"
+  echo "  git clone git@$alias:<owner>/<repo>.git <dir>"
+  echo ""
+  echo "If the org enforces SAML SSO, also click 'Configure SSO' next to the key"
+  echo "in its settings and authorize it for that org, or clones will be refused."
+  return 0
+}
+
+acct_bind() {
+  local name="${1:-}" dir="${2:-}"
+  if ! _acct_valid_name "$name"; then
+    echo "ezenv: account name required" >&2; return 2
+  fi
+  [ -n "$dir" ] || { echo "ezenv: directory required" >&2; return 2; }
+  local identity; identity="$(_acct_identity "$name")"
+  if [ ! -f "$identity" ]; then
+    echo "ezenv: no such account '$name' (run: ezenv account add $name --email ...)" >&2
+    return 1
+  fi
+  dir="$(_acct_abspath "$dir")"
+  if grep -qF "# ezenv:bind:$name BEGIN $dir" "$GITCONFIG" 2>/dev/null; then
+    echo "already bound: $dir -> $name"; return 0
+  fi
+  touch "$GITCONFIG"
+  {
+    echo ""
+    echo "# ezenv:bind:$name BEGIN $dir"
+    # The trailing slash is what makes this match the directory AND everything
+    # under it; without it git matches nothing useful.
+    echo "[includeIf \"gitdir:$dir/\"]"
+    printf '\tpath = %s\n' "$identity"
+    echo "# ezenv:bind:$name END $dir"
+  } >> "$GITCONFIG"
+  echo "bound: ${dir/#$HOME/~} -> $name"
+  [ -d "$dir" ] || echo "  note: that directory does not exist yet; the binding" \
+                        "activates once you clone into it."
+  return 0
+}
+
+acct_list() {
+  local names; names="$(_acct_names)"
+  if [ -z "$names" ]; then
+    echo "no accounts registered (ezenv account add <name> --email <email>)"
+    return 0
+  fi
+  local n line d
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    local identity who=""
+    identity="$(_acct_identity "$n")"
+    [ -f "$identity" ] && who="$(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*//p' "$identity" | head -1)"
+    echo "$n${who:+  <$who>}"
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      [ "${line%% *}" = "$n" ] || continue
+      d="${line#* }"
+      echo "    ${d/#$HOME/~}"
+    done <<EOF
+$(_acct_binds)
+EOF
+  done <<EOF
+$names
+EOF
+}
+
+acct_key() {
+  local name="${1:-}" key
+  _acct_valid_name "$name" || { echo "ezenv: account name required" >&2; return 2; }
+  key="$(_acct_key "$name").pub"
+  [ -f "$key" ] || { echo "ezenv: no public key for '$name' ($key)" >&2; return 1; }
+  cat "$key"
+}
+
+# The reason this feature is worth having. A bound directory that gets renamed
+# still looks fine — git silently falls back to your global identity and the
+# wrong name lands on every commit, with no error anywhere. `check` is what
+# turns that into something visible.
+acct_check() {
+  local problems=0 n identity key line d expect_email actual repo
+  local names; names="$(_acct_names)"
+  if [ -z "$names" ]; then echo "no accounts registered"; return 0; fi
+
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    echo "$n"
+    key="$(_acct_key "$n")"; identity="$(_acct_identity "$n")"
+    if [ -f "$key" ] && [ -f "$key.pub" ]; then
+      echo "  key      : ok (${key/#$HOME/~})"
+    else
+      echo "  key      : MISSING ($key)"; problems=$((problems + 1))
+    fi
+    if [ -f "$identity" ]; then
+      expect_email="$(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*//p' "$identity" | head -1)"
+      echo "  identity : ok <$expect_email>"
+    else
+      echo "  identity : MISSING ($identity)"; problems=$((problems + 1)); expect_email=""
+    fi
+
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      [ "${line%% *}" = "$n" ] || continue
+      d="${line#* }"
+      if [ ! -d "$d" ]; then
+        # The rename/move case: the includeIf still points at a path that is
+        # no longer there, so nothing applies it and commits go out as you.
+        echo "  bind     : BROKEN ${d/#$HOME/~} (directory does not exist —"
+        echo "             renamed or moved? commits there use your global identity)"
+        problems=$((problems + 1)); continue
+      fi
+      # Prove it end-to-end where we can: includeIf only evaluates inside a
+      # repo, so find one at the bind root or one level down.
+      repo=""
+      if [ -d "$d/.git" ]; then repo="$d"
+      else
+        for cand in "$d"/*/.git; do
+          [ -d "$cand" ] && { repo="${cand%/.git}"; break; }
+        done
+      fi
+      if [ -z "$repo" ]; then
+        echo "  bind     : ok ${d/#$HOME/~} (no repo there yet to verify against)"
+      else
+        actual="$(git -C "$repo" config user.email 2>/dev/null || true)"
+        if [ -n "$expect_email" ] && [ "$actual" = "$expect_email" ]; then
+          echo "  bind     : ok ${d/#$HOME/~} (verified <$actual>)"
+        else
+          echo "  bind     : WRONG ${d/#$HOME/~} — git resolves <${actual:-none}>,"
+          echo "             expected <$expect_email>"
+          problems=$((problems + 1))
+        fi
+      fi
+    done <<EOF
+$(_acct_binds)
+EOF
+  done <<EOF
+$names
+EOF
+
+  echo ""
+  if [ "$problems" -eq 0 ]; then
+    echo "all good."
+  else
+    echo "$problems problem(s) found."
+    return 1
+  fi
+}
+
+cmd_account() {
+  case "${1:-list}" in
+    add)   shift; acct_add "$@" ;;
+    bind)  shift; acct_bind "$@" ;;
+    list)  shift 2>/dev/null || true; acct_list ;;
+    key)   shift; acct_key "$@" ;;
+    check) shift 2>/dev/null || true; acct_check ;;
+    *) echo "ezenv: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
+  esac
+}
+
 cmd_enable() {
   local sd; sd="$(share_dir)"
   touch "$RC"
@@ -229,6 +535,19 @@ cmd_status() {
       echo "  $f : disabled"
     fi
   done
+  # Accounts aren't features (nothing is sourced), but they're state ezenv owns,
+  # so status should not pretend they don't exist.
+  local names; names="$(_acct_names)"
+  if [ -n "$names" ]; then
+    echo "accounts:"
+    local n
+    while IFS= read -r n; do
+      [ -n "$n" ] && echo "  $n : $(_acct_binds | grep -c "^$n ") binding(s)"
+    done <<EOF
+$names
+EOF
+    echo "  (ezenv account check verifies they still apply)"
+  fi
 }
 
 cmd_doctor() {
@@ -258,6 +577,7 @@ case "${1:-help}" in
   status)               cmd_status ;;
   doctor)               cmd_doctor ;;
   init)                 shift; cmd_init "$@" ;;
+  account|accounts)     shift; cmd_account "$@" ;;
   version|--version|-v) echo "ezenv $VERSION" ;;
   help|--help|-h)       usage ;;
   *)                    usage >&2; exit 1 ;;
