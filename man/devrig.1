@@ -1,12 +1,12 @@
-.TH EZENV 1 "2026" "ezenv 0.3.0" "User Commands"
+.TH DEVRIG 1 "2026" "devrig 0.3.0" "User Commands"
 .SH NAME
-ezenv \- opt-in shell environment helpers
+devrig \- opt-in dev environment helpers
 .SH SYNOPSIS
-.B ezenv
+.B devrig
 .I command
 .RI [ feature ...]
 .SH DESCRIPTION
-.B ezenv
+.B devrig
 bundles small, independently enabled zsh helpers. Each feature is a script
 you source from your
 .IR ~/.zshrc ;
@@ -52,20 +52,20 @@ below.
 Print the version.
 .SH ENVIRONMENT
 .TP
-.B EZENV_RC
+.B DEVRIG_RC
 Override the rc file that enable/disable edit (default
 .IR ~/.zshrc ).
 .TP
-.B EZENV_SHIM_DIR
+.B DEVRIG_SHIM_DIR
 Override where pyf writes its python/pip shims.
 .TP
-.B EZENV_SSH_CONFIG
+.B DEVRIG_SSH_CONFIG
 Override the ssh config that
 .B account
 appends host aliases to (default
 .IR ~/.ssh/config ).
 .TP
-.B EZENV_GITCONFIG
+.B DEVRIG_GITCONFIG
 Override the git config that
 .B account
 appends
@@ -73,7 +73,7 @@ appends
 stanzas to (default
 .IR ~/.gitconfig ).
 .TP
-.B EZENV_SSH_KEY_DIR
+.B DEVRIG_SSH_KEY_DIR
 Override where
 .B account
 generates keypairs (default
@@ -88,14 +88,14 @@ The current directory wins: leaving every
 .I .venv
 scope deactivates whatever is active, including a venv activated by your editor.
 On
-.BR "ezenv enable autovenv" ,
+.BR "devrig enable autovenv" ,
 it offers (with a prompt) to disable VSCode/Cursor's own terminal venv
 auto-activation
 .RB ( python.terminal.activateEnvironment )
 in your user settings, so autovenv is the sole venv manager;
-.B "ezenv disable autovenv"
+.B "devrig disable autovenv"
 offers to undo it. Those edits are backed up alongside the file
-.RB ( .ezenv-bak ).
+.RB ( .devrig-bak ).
 .TP
 .B pyf
 Create shims so bare
@@ -117,7 +117,7 @@ loads
 a specific one. Shorthand for
 .BR "set -a; source <file>; set +a" .
 It is a sourced function rather than an
-.B ezenv
+.B devrig
 subcommand because a subprocess cannot export variables back into your shell.
 Named
 .B envup
@@ -129,7 +129,7 @@ Work split across more than one git host account \(em a personal one and an
 employer's, say \(em normally means remembering to set
 .I user.email
 per clone and juggling ssh keys by hand.
-.B ezenv account
+.B devrig account
 wires that up once per account and then makes it automatic per directory: every
 repo under a bound directory commits as that account and reaches the host with
 that account's key.
@@ -139,7 +139,7 @@ Unlike the features above, nothing is sourced into your shell. Git reads
 from your git config and ssh reads the
 .I Host
 alias from your ssh config on their own, so this is persistent configuration
-plus a keypair. ezenv only ever appends, wrapped in
+plus a keypair. devrig only ever appends, wrapped in
 .I BEGIN/END
 sentinel comments, and never clobbers an existing key, host block, or identity
 file.
@@ -190,7 +190,7 @@ passphrase would need agent plumbing on every clone. They are protected by file
 permissions only.
 .SH FILES
 .TP
-.I <prefix>/share/ezenv/*.zsh
+.I <prefix>/share/devrig/*.zsh
 The feature scripts you source.
 .TP
 .I ~/.gitconfig-<account>
@@ -205,9 +205,9 @@ Enable features, then reload the shell to apply:
 .PP
 .nf
 .RS
-ezenv enable autovenv       # per-repo .venv auto-activation
-ezenv enable pyf            # bare python/pip -> python3/pip3
-ezenv enable                # everything
+devrig enable autovenv       # per-repo .venv auto-activation
+devrig enable pyf            # bare python/pip -> python3/pip3
+devrig enable                # everything
 exec zsh                    # apply to the current shell
 .RE
 .fi
@@ -216,8 +216,8 @@ Check and undo:
 .PP
 .nf
 .RS
-ezenv status                # what's enabled
-ezenv disable pyf           # turn one off
+devrig status                # what's enabled
+devrig disable pyf           # turn one off
 .RE
 .fi
 .PP
@@ -225,10 +225,10 @@ Tie a directory to a second git account:
 .PP
 .nf
 .RS
-ezenv account add work --email me@work.com --dir ~/code/work
+devrig account add work --email me@work.com --dir ~/code/work
 # paste the printed key into that host account, then:
 git clone git@github.com-work:acme/api.git ~/code/work/api
-ezenv account check          # confirm it really applies
+devrig account check          # confirm it really applies
 .RE
 .fi
 .PP
@@ -238,8 +238,8 @@ edit):
 .PP
 .nf
 .RS
-source "$(brew --prefix)/share/ezenv/autovenv.zsh"
-source "$(brew --prefix)/share/ezenv/pyf.zsh"
+source "$(brew --prefix)/share/devrig/autovenv.zsh"
+source "$(brew --prefix)/share/devrig/pyf.zsh"
 .RE
 .fi
 .SH SEE ALSO

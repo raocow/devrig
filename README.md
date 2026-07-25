@@ -1,4 +1,4 @@
-# ezenv
+# devrig
 
 Opt-in shell environment helpers for a fresh Mac. Small zsh features you enable
 à la carte — no dotfile spelunking, just `brew install` and one command per
@@ -11,31 +11,31 @@ like typing `source .venv/bin/activate`. Let's skip that step.
 
 ```bash
 brew tap raocow/tap      # once
-brew install ezenv
+brew install devrig
 ```
 
 Then enable the features you want (this writes a line to your `~/.zshrc` — an
 extra step by design, since you may not want auto-venv in every repo):
 
 ```bash
-ezenv enable autovenv        # per-repo .venv auto-activation
-ezenv enable pyf             # bare python/pip -> python3/pip3
-ezenv enable                 # everything
+devrig enable autovenv        # per-repo .venv auto-activation
+devrig enable pyf             # bare python/pip -> python3/pip3
+devrig enable                 # everything
 exec zsh                     # apply to the current shell
 ```
 
-`ezenv status` shows what's enabled; `ezenv disable <feature>` turns one off;
-`ezenv doctor` shows the resolved python/pip/venv. (`install`/`uninstall` still
+`devrig status` shows what's enabled; `devrig disable <feature>` turns one off;
+`devrig doctor` shows the resolved python/pip/venv. (`install`/`uninstall` still
 work as aliases for `enable`/`disable`.)
 
 <details>
 <summary>Manual / advanced</summary>
 
-`ezenv enable` just appends a `source` line. To wire it up yourself instead:
+`devrig enable` just appends a `source` line. To wire it up yourself instead:
 
 ```sh
-eval "$(ezenv init autovenv)"                      # in ~/.zshrc
-source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all features)
+eval "$(devrig init autovenv)"                      # in ~/.zshrc
+source "$(brew --prefix)/share/devrig/devrig.zsh"    # or source directly (all features)
 ```
 </details>
 
@@ -43,9 +43,9 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all fea
 
 | Feature | What it does |
 |---|---|
-| `autovenv` | On every `cd`, activates the nearest `.venv` found walking up from the current dir, and deactivates on leaving. Opt-in by presence of a `.venv`, so it only fires in repos where you created one. The current directory wins: leaving every `.venv` scope deactivates whatever is active — including a venv auto-activated by your editor. **On `enable`, it offers to turn off VSCode/Cursor's own terminal venv auto-activation** (`python.terminal.activateEnvironment`, user-level) so autovenv is the sole manager and no venv leaks into dirs that have none; `disable` offers to undo it. Edits are backed up (`.ezenv-bak`). |
+| `autovenv` | On every `cd`, activates the nearest `.venv` found walking up from the current dir, and deactivates on leaving. Opt-in by presence of a `.venv`, so it only fires in repos where you created one. The current directory wins: leaving every `.venv` scope deactivates whatever is active — including a venv auto-activated by your editor. **On `enable`, it offers to turn off VSCode/Cursor's own terminal venv auto-activation** (`python.terminal.activateEnvironment`, user-level) so autovenv is the sole manager and no venv leaks into dirs that have none; `disable` offers to undo it. Edits are backed up (`.devrig-bak`). |
 | `pyf` | Symlinks `python`→`python3` and `pip`→`pip3` in a managed shim dir appended to `PATH`. Real interpreters and active virtualenvs always take precedence. (Formerly `py-fallback`, still accepted as an alias.) |
-| `envup` | Adds an `envup` command that exports a `.env` into the current shell — `envup` loads `./.env`, `envup path/to/file` a specific one. Shorthand for `set -a; source <file>; set +a`. (A sourced function, not an `ezenv` subcommand — a subprocess can't export back into your shell. Named `envup`, not `dotenv`, to avoid shadowing the python-dotenv CLI.) |
+| `envup` | Adds an `envup` command that exports a `.env` into the current shell — `envup` loads `./.env`, `envup path/to/file` a specific one. Shorthand for `set -a; source <file>; set +a`. (A sourced function, not an `devrig` subcommand — a subprocess can't export back into your shell. Named `envup`, not `dotenv`, to avoid shadowing the python-dotenv CLI.) |
 
 ## Accounts
 
@@ -54,16 +54,16 @@ Two git accounts — yours and an employer's — normally means remembering to s
 and it's automatic per directory after that:
 
 ```bash
-ezenv account add work --email me@work.com --dir ~/code/work
+devrig account add work --email me@work.com --dir ~/code/work
 # paste the printed key into that host account, then clone via the alias:
 git clone git@github.com-work:acme/api.git ~/code/work/api
-ezenv account check     # confirm it actually applies
+devrig account check     # confirm it actually applies
 ```
 
 Every repo under `~/code/work` now commits as `work` and reaches the host with
 `work`'s key. Nothing is sourced into your shell — git reads `includeIf` and ssh
 reads the `Host` alias on their own, so this is just config plus a keypair.
-ezenv only ever *appends*, wrapped in `BEGIN`/`END` sentinel comments, and never
+devrig only ever *appends*, wrapped in `BEGIN`/`END` sentinel comments, and never
 clobbers an existing key, host block, or identity file.
 
 | Command | What it does |
@@ -82,20 +82,20 @@ that git really resolves the expected address.
 
 Keys are generated without a passphrase — this is a convenience tool, and a
 passphrase would need agent plumbing on every clone. They're protected by file
-permissions only. Overrides for testing: `EZENV_SSH_CONFIG`, `EZENV_GITCONFIG`,
-`EZENV_SSH_KEY_DIR`.
+permissions only. Overrides for testing: `DEVRIG_SSH_CONFIG`, `DEVRIG_GITCONFIG`,
+`DEVRIG_SSH_KEY_DIR`.
 
 ## Disable / uninstall
 
 ```bash
-ezenv disable autovenv    # turn off one feature
-ezenv disable all         # remove all ezenv lines from ~/.zshrc
-brew uninstall ezenv
+devrig disable autovenv    # turn off one feature
+devrig disable all         # remove all devrig lines from ~/.zshrc
+brew uninstall devrig
 ```
 
-A feature (or `all`) is required — a bare `ezenv disable` won't wipe everything
-by accident. `ezenv disable pyf` also removes its shim dir
-(`~/.local/share/ezenv/shims`, override with `EZENV_SHIM_DIR`), leaving nothing behind.
+A feature (or `all`) is required — a bare `devrig disable` won't wipe everything
+by accident. `devrig disable pyf` also removes its shim dir
+(`~/.local/share/devrig/shims`, override with `DEVRIG_SHIM_DIR`), leaving nothing behind.
 
 ## License
 

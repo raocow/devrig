@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# ezenv — opt-in shell environment helpers.
+# devrig (formerly ezenv) — opt-in dev environment helpers.
 set -eo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
-# root (bin/..), so `share/ezenv` is found whether run from Homebrew or source.
+# root (bin/..), so `share/devrig` is found whether run from Homebrew or source.
 _src="${BASH_SOURCE[0]}"
 while [ -h "$_src" ]; do
   _dir="$(cd -P "$(dirname "$_src")" && pwd)"
@@ -13,23 +13,25 @@ while [ -h "$_src" ]; do
   [[ "$_src" != /* ]] && _src="$_dir/$_src"
 done
 BIN_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
-SHARE="$(cd "$BIN_DIR/.." && pwd)/share/ezenv"
+SHARE="$(cd "$BIN_DIR/.." && pwd)/share/devrig"
 
-RC="${EZENV_RC:-${ZDOTDIR:-$HOME}/.zshrc}"
+# DEVRIG_* is canonical; EZENV_* (pre-rename) is honored as a deprecated
+# fallback so an existing exported override doesn't silently stop working.
+RC="${DEVRIG_RC:-${EZENV_RC:-${ZDOTDIR:-$HOME}/.zshrc}}"
 
 usage() {
   cat <<EOF
-ezenv $VERSION — opt-in shell environment helpers
+devrig $VERSION — opt-in dev environment helpers
 
 Usage:
-  ezenv enable [feature...]      Enable feature(s) (no feature = all)
-  ezenv disable <feature|all>    Disable a feature (or 'all'); a feature is required
-  ezenv status                   Show which features are enabled
-  ezenv doctor                   Show current environment (python/pip/venv)
-  ezenv init [feature...]        Print the raw source line(s) — for eval or manual use
-  ezenv account <cmd>            Tie directories to different git/ssh accounts
-  ezenv version                  Print version
-  ezenv help                     Show this help
+  devrig enable [feature...]      Enable feature(s) (no feature = all)
+  devrig disable <feature|all>    Disable a feature (or 'all'); a feature is required
+  devrig status                   Show which features are enabled
+  devrig doctor                   Show current environment (python/pip/venv)
+  devrig init [feature...]        Print the raw source line(s) — for eval or manual use
+  devrig account <cmd>            Tie directories to different git/ssh accounts
+  devrig version                  Print version
+  devrig help                     Show this help
 
 Features:
   autovenv       Auto-activate the nearest .venv when you cd into a repo
@@ -38,16 +40,16 @@ Features:
   all            Everything (default when no feature is given)
 
 Accounts:
-  ezenv account add <name> --email <email> [--name <git name>]
+  devrig account add <name> --email <email> [--name <git name>]
                            [--host <host>] [--dir <path>]
-  ezenv account bind <name> <dir>   Use <name>'s identity in <dir> and below
-  ezenv account list                Show accounts and their bound directories
-  ezenv account key <name>          Print the public key to paste into the host
-  ezenv account check               Verify every binding still actually applies
+  devrig account bind <name> <dir>   Use <name>'s identity in <dir> and below
+  devrig account list                Show accounts and their bound directories
+  devrig account key <name>          Print the public key to paste into the host
+  devrig account check               Verify every binding still actually applies
 
 Example:
-  ezenv enable autovenv      # then: exec zsh
-  ezenv account add work --email me@work.com --dir ~/code/work
+  devrig enable autovenv      # then: exec zsh
+  devrig account add work --email me@work.com --dir ~/code/work
 EOF
 }
 
@@ -55,8 +57,8 @@ EOF
 # Homebrew opt path; fall back to the resolved location for source/dev runs.
 share_dir() {
   local p
-  if p="$(brew --prefix ezenv 2>/dev/null)" && [ -d "$p/share/ezenv" ]; then
-    echo "$p/share/ezenv"
+  if p="$(brew --prefix devrig 2>/dev/null)" && [ -d "$p/share/devrig" ]; then
+    echo "$p/share/devrig"
   else
     echo "$SHARE"
   fi
@@ -87,10 +89,14 @@ expand_features() {
 }
 
 # True if a feature is enabled in $RC. Recognizes the legacy 'py-fallback'
-# marker so an rc written by an older ezenv is still detected as 'pyf'.
+# marker so an rc written by an older devrig is still detected as 'pyf', and
+# the pre-rename 'ezenv:' marker prefix so an rc from before the rename is
+# still detected without requiring a manual edit.
 feature_enabled() {
   [ -f "$RC" ] || return 1
+  grep -qF "# devrig:$1" "$RC" && return 0
   grep -qF "# ezenv:$1" "$RC" && return 0
+  [ "$1" = pyf ] && grep -qF "# devrig:py-fallback" "$RC" && return 0
   [ "$1" = pyf ] && grep -qF "# ezenv:py-fallback" "$RC" && return 0
   return 1
 }
@@ -100,7 +106,7 @@ feature_enabled() {
 # every new terminal, workspace-wide — which fights autovenv's directory-precise
 # model (it loads a venv even in dirs that have none). On `enable autovenv` we
 # offer to turn that off at the user level so autovenv owns venv activation;
-# `disable autovenv` offers to turn it back on. Edits are backed up (.ezenv-bak).
+# `disable autovenv` offers to turn it back on. Edits are backed up (.devrig-bak).
 _EDITOR_KEY='python.terminal.activateEnvironment'
 
 _editor_settings() {  # print settings.json path for each installed editor
@@ -119,10 +125,10 @@ _editor_set_false() {  # add "<key>": false as the first entry (JSONC-safe)
   if [ ! -s "$f" ]; then
     printf '{\n    "%s": false\n}\n' "$_EDITOR_KEY" > "$f"
   else
-    cp "$f" "$f.ezenv-bak"
+    cp "$f" "$f.devrig-bak"
     # Insert right after the first '{'. JSONC tolerates the trailing comma even
     # if this becomes the only key, so this is safe for compact or empty objects.
-    EZENV_KEY="$_EDITOR_KEY" perl -0pi -e 's/\{/\{\n    "$ENV{EZENV_KEY}": false,/' "$f"
+    DEVRIG_KEY="$_EDITOR_KEY" perl -0pi -e 's/\{/\{\n    "$ENV{DEVRIG_KEY}": false,/' "$f"
   fi
   echo "  ${f/#$HOME/~}: set $_EDITOR_KEY=false"
 }
@@ -157,9 +163,9 @@ _editor_restore() {  # disable autovenv → offer to undo the defer
   case "$ans" in
     y|Y|yes|YES)
       for f in "${todo[@]}"; do
-        cp "$f" "$f.ezenv-bak"
-        grep -Ev "$pat" "$f" > "$f.ezenv-tmp" || true
-        mv "$f.ezenv-tmp" "$f"
+        cp "$f" "$f.devrig-bak"
+        grep -Ev "$pat" "$f" > "$f.devrig-tmp" || true
+        mv "$f.devrig-tmp" "$f"
         echo "  ${f/#$HOME/~}: removed $_EDITOR_KEY=false"
       done ;;
     *) return 0 ;;
@@ -170,7 +176,7 @@ _editor_restore() {  # disable autovenv → offer to undo the defer
 # Unlike the features above, this is NOT a shell feature: nothing is sourced.
 # Git reads `includeIf` out of ~/.gitconfig and ssh reads the `Host` alias out
 # of ~/.ssh/config on their own, so the whole feature is persistent config plus
-# a keypair. That's why it gets its own `ezenv account` verb rather than
+# a keypair. That's why it gets its own `devrig account` verb rather than
 # enable/disable — the state is a registry of N accounts and their directory
 # bindings, not one on/off marker line.
 #
@@ -182,9 +188,9 @@ _editor_restore() {  # disable autovenv → offer to undo the defer
 #   2. We never clobber. An existing key, ssh block, or identity file is left
 #      alone and reported, because all three are things you may have hand-tuned.
 
-SSH_CONFIG="${EZENV_SSH_CONFIG:-$HOME/.ssh/config}"
-GITCONFIG="${EZENV_GITCONFIG:-$HOME/.gitconfig}"
-KEY_DIR="${EZENV_SSH_KEY_DIR:-$HOME/.ssh}"
+SSH_CONFIG="${DEVRIG_SSH_CONFIG:-${EZENV_SSH_CONFIG:-$HOME/.ssh/config}}"
+GITCONFIG="${DEVRIG_GITCONFIG:-${EZENV_GITCONFIG:-$HOME/.gitconfig}}"
+KEY_DIR="${DEVRIG_SSH_KEY_DIR:-${EZENV_SSH_KEY_DIR:-$HOME/.ssh}}"
 
 # The name lands in a filename, an ssh Host alias, and a config path, so keep it
 # to characters that are safe and quote-free in all three.
@@ -196,18 +202,18 @@ _acct_valid_name() {
 }
 
 _acct_key()      { echo "$KEY_DIR/id_ed25519_$1"; }
-# Identity file sits beside the gitconfig it's included from, so an EZENV_GITCONFIG
+# Identity file sits beside the gitconfig it's included from, so an DEVRIG_GITCONFIG
 # override (tests) keeps the whole set together instead of writing into real $HOME.
 _acct_identity() { echo "$(dirname "$GITCONFIG")/.gitconfig-$1"; }
 
 _acct_names() {  # every registered account, one per line
   [ -f "$SSH_CONFIG" ] || return 0
-  sed -n 's/^# ezenv:account:\([^ ]*\) BEGIN.*/\1/p' "$SSH_CONFIG"
+  sed -n 's/^# devrig:account:\([^ ]*\) BEGIN.*/\1/p' "$SSH_CONFIG"
 }
 
 _acct_binds() {  # "<name> <dir>" per binding
   [ -f "$GITCONFIG" ] || return 0
-  sed -n 's/^# ezenv:bind:\([^ ]*\) BEGIN \(.*\)$/\1 \2/p' "$GITCONFIG"
+  sed -n 's/^# devrig:bind:\([^ ]*\) BEGIN \(.*\)$/\1 \2/p' "$GITCONFIG"
 }
 
 # Absolute PHYSICAL path, without requiring the directory to exist yet (you often
@@ -238,7 +244,7 @@ acct_add() {
   local name="${1:-}"; shift 2>/dev/null || true
   local email="" gitname="" host="github.com" dir=""
   if ! _acct_valid_name "$name"; then
-    echo "ezenv: account name required (letters, digits, . _ - only)" >&2; return 2
+    echo "devrig: account name required (letters, digits, . _ - only)" >&2; return 2
   fi
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -246,11 +252,11 @@ acct_add() {
       --name)  gitname="${2:-}"; shift 2 || return 2 ;;
       --host)  host="${2:-}"; shift 2 || return 2 ;;
       --dir)   dir="${2:-}"; shift 2 || return 2 ;;
-      *) echo "ezenv: unknown option '$1'" >&2; return 2 ;;
+      *) echo "devrig: unknown option '$1'" >&2; return 2 ;;
     esac
   done
-  [ -n "$email" ] || { echo "ezenv: --email is required" >&2; return 2; }
-  [ -n "$host" ]  || { echo "ezenv: --host cannot be empty" >&2; return 2; }
+  [ -n "$email" ] || { echo "devrig: --email is required" >&2; return 2; }
+  [ -n "$host" ]  || { echo "devrig: --host cannot be empty" >&2; return 2; }
   gitname="${gitname:-$name}"
 
   local key alias identity
@@ -269,13 +275,13 @@ acct_add() {
     echo "created key: ${key/#$HOME/~}"
   fi
 
-  if grep -qF "# ezenv:account:$name BEGIN" "$SSH_CONFIG" 2>/dev/null; then
+  if grep -qF "# devrig:account:$name BEGIN" "$SSH_CONFIG" 2>/dev/null; then
     echo "ssh host alias already present: $alias"
   else
     touch "$SSH_CONFIG" && chmod 600 "$SSH_CONFIG"
     {
       echo ""
-      echo "# ezenv:account:$name BEGIN"
+      echo "# devrig:account:$name BEGIN"
       echo "Host $alias"
       echo "  HostName $host"
       echo "  User git"
@@ -286,7 +292,7 @@ acct_add() {
       echo "  AddKeysToAgent yes"
       # UseKeychain is a macOS-only keyword; elsewhere ssh errors on it.
       [ "$(uname -s)" = Darwin ] && echo "  UseKeychain yes"
-      echo "# ezenv:account:$name END"
+      echo "# devrig:account:$name END"
     } >> "$SSH_CONFIG"
     echo "added ssh host alias: $alias"
   fi
@@ -316,27 +322,27 @@ acct_add() {
 acct_bind() {
   local name="${1:-}" dir="${2:-}"
   if ! _acct_valid_name "$name"; then
-    echo "ezenv: account name required" >&2; return 2
+    echo "devrig: account name required" >&2; return 2
   fi
-  [ -n "$dir" ] || { echo "ezenv: directory required" >&2; return 2; }
+  [ -n "$dir" ] || { echo "devrig: directory required" >&2; return 2; }
   local identity; identity="$(_acct_identity "$name")"
   if [ ! -f "$identity" ]; then
-    echo "ezenv: no such account '$name' (run: ezenv account add $name --email ...)" >&2
+    echo "devrig: no such account '$name' (run: devrig account add $name --email ...)" >&2
     return 1
   fi
   dir="$(_acct_abspath "$dir")"
-  if grep -qF "# ezenv:bind:$name BEGIN $dir" "$GITCONFIG" 2>/dev/null; then
+  if grep -qF "# devrig:bind:$name BEGIN $dir" "$GITCONFIG" 2>/dev/null; then
     echo "already bound: $dir -> $name"; return 0
   fi
   touch "$GITCONFIG"
   {
     echo ""
-    echo "# ezenv:bind:$name BEGIN $dir"
+    echo "# devrig:bind:$name BEGIN $dir"
     # The trailing slash is what makes this match the directory AND everything
     # under it; without it git matches nothing useful.
     echo "[includeIf \"gitdir:$dir/\"]"
     printf '\tpath = %s\n' "$identity"
-    echo "# ezenv:bind:$name END $dir"
+    echo "# devrig:bind:$name END $dir"
   } >> "$GITCONFIG"
   echo "bound: ${dir/#$HOME/~} -> $name"
   [ -d "$dir" ] || echo "  note: that directory does not exist yet; the binding" \
@@ -347,7 +353,7 @@ acct_bind() {
 acct_list() {
   local names; names="$(_acct_names)"
   if [ -z "$names" ]; then
-    echo "no accounts registered (ezenv account add <name> --email <email>)"
+    echo "no accounts registered (devrig account add <name> --email <email>)"
     return 0
   fi
   local n line d
@@ -372,9 +378,9 @@ EOF
 
 acct_key() {
   local name="${1:-}" key
-  _acct_valid_name "$name" || { echo "ezenv: account name required" >&2; return 2; }
+  _acct_valid_name "$name" || { echo "devrig: account name required" >&2; return 2; }
   key="$(_acct_key "$name").pub"
-  [ -f "$key" ] || { echo "ezenv: no public key for '$name' ($key)" >&2; return 1; }
+  [ -f "$key" ] || { echo "devrig: no public key for '$name' ($key)" >&2; return 1; }
   cat "$key"
 }
 
@@ -458,7 +464,7 @@ cmd_account() {
     list)  shift 2>/dev/null || true; acct_list ;;
     key)   shift; acct_key "$@" ;;
     check) shift 2>/dev/null || true; acct_check ;;
-    *) echo "ezenv: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
+    *) echo "devrig: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
   esac
 }
 
@@ -468,13 +474,13 @@ cmd_enable() {
   local changed=0 f file marker feats; feats="$(expand_features "$@")"
   for f in $feats; do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; continue
+      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; continue
     fi
     if feature_enabled "$f"; then
       echo "already enabled: $f"
       continue
     fi
-    marker="# ezenv:$f"
+    marker="# devrig:$f"
     printf 'source "%s/%s"  %s\n' "$sd" "$file" "$marker" >> "$RC"
     echo "enabled: $f"
     changed=1
@@ -487,24 +493,29 @@ cmd_enable() {
 }
 
 cmd_disable() {
-  # Require an explicit feature, so a bare `ezenv disable` can't wipe everything
-  # by accident. Use `ezenv disable all` to turn them all off.
+  # Require an explicit feature, so a bare `devrig disable` can't wipe everything
+  # by accident. Use `devrig disable all` to turn them all off.
   if [ "$#" -eq 0 ]; then
-    echo "ezenv: pick a feature to disable: autovenv, pyf, envup (or 'all')" >&2
+    echo "devrig: pick a feature to disable: autovenv, pyf, envup (or 'all')" >&2
     return 2
   fi
   [ -f "$RC" ] || { echo "nothing to do (no $RC)"; return 0; }
   local changed=0 f tmp shim feats; feats="$(expand_features "$@")"
   for f in $feats; do
     if feature_enabled "$f"; then
-      tmp="$(mktemp "${RC}.ezenv.XXXXXX")"
+      tmp="$(mktemp "${RC}.devrig.XXXXXX")"
       # Drop the feature's line(s); for pyf also drop the legacy py-fallback
-      # marker. `|| true`: grep exits 1 when it filters out the only line
-      # (empty output), which must not abort the removal or trip `set -e`.
+      # marker. Also drop the pre-rename 'ezenv:' marker so a not-yet-migrated
+      # rc is fully cleaned in one pass, not left with a dangling old line.
+      # `|| true`: grep exits 1 when it filters out the only line (empty
+      # output), which must not abort the removal or trip `set -e`.
       if [ "$f" = pyf ]; then
-        grep -vF "# ezenv:pyf" "$RC" | grep -vF "# ezenv:py-fallback" > "$tmp" || true
+        grep -vF "# devrig:pyf" "$RC" \
+          | grep -vF "# devrig:py-fallback" \
+          | grep -vF "# ezenv:pyf" \
+          | grep -vF "# ezenv:py-fallback" > "$tmp" || true
       else
-        grep -vF "# ezenv:$f" "$RC" > "$tmp" || true
+        grep -vF "# devrig:$f" "$RC" | grep -vF "# ezenv:$f" > "$tmp" || true
       fi
       mv "$tmp" "$RC"
       echo "disabled: $f"
@@ -512,10 +523,15 @@ cmd_disable() {
     else
       echo "not enabled: $f"
     fi
-    # Clean up pyf's shim dir so disable leaves nothing behind.
+    # Clean up pyf's shim dir so disable leaves nothing behind — both the
+    # current path and the pre-rename one, in case it's never been migrated.
     if [ "$f" = pyf ]; then
-      shim="${EZENV_SHIM_DIR:-$HOME/.local/share/ezenv/shims}"
+      shim="${DEVRIG_SHIM_DIR:-${EZENV_SHIM_DIR:-$HOME/.local/share/devrig/shims}}"
       if [ -d "$shim" ]; then rm -rf "$shim"; echo "removed shims: $shim"; fi
+      if [ -z "${DEVRIG_SHIM_DIR:-}" ] && [ -d "$HOME/.local/share/ezenv/shims" ]; then
+        rm -rf "$HOME/.local/share/ezenv/shims"
+        echo "removed shims: ~/.local/share/ezenv/shims"
+      fi
     fi
   done
   # If we're turning autovenv off, offer to give the editor its venv activation
@@ -535,7 +551,7 @@ cmd_status() {
       echo "  $f : disabled"
     fi
   done
-  # Accounts aren't features (nothing is sourced), but they're state ezenv owns,
+  # Accounts aren't features (nothing is sourced), but they're state devrig owns,
   # so status should not pretend they don't exist.
   local names; names="$(_acct_names)"
   if [ -n "$names" ]; then
@@ -546,12 +562,12 @@ cmd_status() {
     done <<EOF
 $names
 EOF
-    echo "  (ezenv account check verifies they still apply)"
+    echo "  (devrig account check verifies they still apply)"
   fi
 }
 
 cmd_doctor() {
-  echo "ezenv $VERSION"
+  echo "devrig $VERSION"
   echo "share dir   : $(share_dir)"
   echo "python      : $(command -v python || echo '<not found>')"
   echo "python3     : $(command -v python3 || echo '<not found>')"
@@ -565,7 +581,7 @@ cmd_init() {
   local f file
   for f in $(expand_features "$@"); do
     if ! file="$(feature_file "$f")"; then
-      echo "ezenv: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; return 1
+      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; return 1
     fi
     printf 'source "%s/%s"\n' "$sd" "$file"
   done
@@ -578,7 +594,7 @@ case "${1:-help}" in
   doctor)               cmd_doctor ;;
   init)                 shift; cmd_init "$@" ;;
   account|accounts)     shift; cmd_account "$@" ;;
-  version|--version|-v) echo "ezenv $VERSION" ;;
+  version|--version|-v) echo "devrig $VERSION" ;;
   help|--help|-h)       usage ;;
   *)                    usage >&2; exit 1 ;;
 esac
