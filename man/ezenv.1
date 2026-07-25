@@ -43,6 +43,11 @@ Report the resolved python/pip and the active virtualenv.
 Print the raw source line(s) for manual use or
 .BR eval .
 .TP
+.B account " <subcommand>"
+Tie directories to different git/ssh accounts. See
+.B ACCOUNTS
+below.
+.TP
 .B version
 Print the version.
 .SH ENVIRONMENT
@@ -53,6 +58,26 @@ Override the rc file that enable/disable edit (default
 .TP
 .B EZENV_SHIM_DIR
 Override where pyf writes its python/pip shims.
+.TP
+.B EZENV_SSH_CONFIG
+Override the ssh config that
+.B account
+appends host aliases to (default
+.IR ~/.ssh/config ).
+.TP
+.B EZENV_GITCONFIG
+Override the git config that
+.B account
+appends
+.I includeIf
+stanzas to (default
+.IR ~/.gitconfig ).
+.TP
+.B EZENV_SSH_KEY_DIR
+Override where
+.B account
+generates keypairs (default
+.IR ~/.ssh ).
 .SH FEATURES
 .TP
 .B autovenv
@@ -99,10 +124,82 @@ Named
 rather than
 .B dotenv
 to avoid shadowing the python-dotenv CLI.
+.SH ACCOUNTS
+Work split across more than one git host account \(em a personal one and an
+employer's, say \(em normally means remembering to set
+.I user.email
+per clone and juggling ssh keys by hand.
+.B ezenv account
+wires that up once per account and then makes it automatic per directory: every
+repo under a bound directory commits as that account and reaches the host with
+that account's key.
+.PP
+Unlike the features above, nothing is sourced into your shell. Git reads
+.I includeIf
+from your git config and ssh reads the
+.I Host
+alias from your ssh config on their own, so this is persistent configuration
+plus a keypair. ezenv only ever appends, wrapped in
+.I BEGIN/END
+sentinel comments, and never clobbers an existing key, host block, or identity
+file.
+.TP
+.B account add " <name> --email <email> [--name <git name>] [--host <host>] [--dir <path>]"
+Generate an ed25519 keypair, append a
+.RI Host " <host>-<name>"
+alias, and write an identity file holding the git
+.I user.name
+and
+.IR user.email .
+.I --name
+defaults to
+.IR <name> ,
+.I --host
+to
+.IR github.com .
+With
+.I --dir
+the directory is bound in the same step. Prints the public key to add to the
+host account.
+.TP
+.B account bind " <name> <dir>"
+Use that account's identity for
+.I <dir>
+and everything under it. The directory need not exist yet.
+.TP
+.B account list
+Show each account, its email, and the directories bound to it.
+.TP
+.B account key " <name>"
+Print the account's public key again \(em for pasting into the host, or for
+authorizing it against an SSO-enforcing organization.
+.TP
+.B account check
+Verify every account and binding still applies, and exit non-zero if not. This
+is the command worth running: a bound directory that is renamed or moved leaves
+its
+.I includeIf
+pointing at a path that no longer exists, so git silently falls back to your
+global identity and the wrong name lands on every commit with no error anywhere.
+Where a repository exists under a binding,
+.B check
+confirms end to end that git really does resolve the expected address.
+.PP
+Keys are generated without a passphrase: this is a convenience tool, and a
+passphrase would need agent plumbing on every clone. They are protected by file
+permissions only.
 .SH FILES
 .TP
 .I <prefix>/share/ezenv/*.zsh
 The feature scripts you source.
+.TP
+.I ~/.gitconfig-<account>
+Per-account git identity, included from
+.I ~/.gitconfig
+for bound directories.
+.TP
+.I ~/.ssh/id_ed25519_<account>
+Per-account ssh key.
 .SH EXAMPLES
 Enable features, then reload the shell to apply:
 .PP
@@ -121,6 +218,17 @@ Check and undo:
 .RS
 ezenv status                # what's enabled
 ezenv disable pyf           # turn one off
+.RE
+.fi
+.PP
+Tie a directory to a second git account:
+.PP
+.nf
+.RS
+ezenv account add work --email me@work.com --dir ~/code/work
+# paste the printed key into that host account, then:
+git clone git@github.com-work:acme/api.git ~/code/work/api
+ezenv account check          # confirm it really applies
 .RE
 .fi
 .PP

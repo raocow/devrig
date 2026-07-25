@@ -47,6 +47,44 @@ source "$(brew --prefix)/share/ezenv/ezenv.zsh"    # or source directly (all fea
 | `pyf` | Symlinks `python`→`python3` and `pip`→`pip3` in a managed shim dir appended to `PATH`. Real interpreters and active virtualenvs always take precedence. (Formerly `py-fallback`, still accepted as an alias.) |
 | `envup` | Adds an `envup` command that exports a `.env` into the current shell — `envup` loads `./.env`, `envup path/to/file` a specific one. Shorthand for `set -a; source <file>; set +a`. (A sourced function, not an `ezenv` subcommand — a subprocess can't export back into your shell. Named `envup`, not `dotenv`, to avoid shadowing the python-dotenv CLI.) |
 
+## Accounts
+
+Two git accounts — yours and an employer's — normally means remembering to set
+`user.email` per clone and juggling ssh keys by hand. Set it up once per account
+and it's automatic per directory after that:
+
+```bash
+ezenv account add work --email me@work.com --dir ~/code/work
+# paste the printed key into that host account, then clone via the alias:
+git clone git@github.com-work:acme/api.git ~/code/work/api
+ezenv account check     # confirm it actually applies
+```
+
+Every repo under `~/code/work` now commits as `work` and reaches the host with
+`work`'s key. Nothing is sourced into your shell — git reads `includeIf` and ssh
+reads the `Host` alias on their own, so this is just config plus a keypair.
+ezenv only ever *appends*, wrapped in `BEGIN`/`END` sentinel comments, and never
+clobbers an existing key, host block, or identity file.
+
+| Command | What it does |
+|---|---|
+| `account add <name> --email <e>` | Keypair + ssh `Host <host>-<name>` alias + `~/.gitconfig-<name>`. `--name` sets the git name (default: account name), `--host` the host (default: `github.com`), `--dir` binds in the same step. Prints the public key to paste into the host. |
+| `account bind <name> <dir>` | Use that identity in `<dir>` and below. The directory doesn't have to exist yet. |
+| `account list` | Accounts, emails, and bound directories. |
+| `account key <name>` | Reprint the public key — for pasting into the host, or authorizing it against an SSO-enforcing org. |
+| `account check` | **The one worth running.** Verifies every binding still applies; non-zero exit if not. |
+
+`check` earns its keep because the main failure mode is silent: rename or move a
+bound directory and its `includeIf` points at a path that's gone, so git quietly
+falls back to your global identity and the wrong name lands on every commit with
+no error anywhere. Where a repo exists under a binding, `check` proves end to end
+that git really resolves the expected address.
+
+Keys are generated without a passphrase — this is a convenience tool, and a
+passphrase would need agent plumbing on every clone. They're protected by file
+permissions only. Overrides for testing: `EZENV_SSH_CONFIG`, `EZENV_GITCONFIG`,
+`EZENV_SSH_KEY_DIR`.
+
 ## Disable / uninstall
 
 ```bash
