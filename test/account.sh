@@ -88,6 +88,82 @@ echo "== validation =="
 "$DEVRIG" account bind ghost /tmp >/dev/null 2>&1 \
   && bad "bind rejects unknown account" || ok "bind rejects unknown account"
 
+echo "== --gh-user =="
+"$DEVRIG" account add work --email me@work.com --gh-user work-gh >/dev/null 2>&1
+has "gh user recorded"  "# devrig:ghuser:work work-gh"  "$DEVRIG_SSH_CONFIG"
+out="$("$DEVRIG" account list)"
+saw "list shows gh user" "$out" "gh: work-gh"
+
+before="$(cat "$DEVRIG_SSH_CONFIG")"
+"$DEVRIG" account add work --email me@work.com --gh-user work-gh >/dev/null 2>&1
+check "re-add same gh-user does not duplicate" "$(cat "$DEVRIG_SSH_CONFIG")" "$before"
+
+out="$("$DEVRIG" account add work --email me@work.com --gh-user someone-else 2>&1)"
+saw "conflicting gh-user warns instead of overwriting" "$out" "already set to 'work-gh'"
+check "conflicting gh-user left the original in place" "$(cat "$DEVRIG_SSH_CONFIG")" "$before"
+
+echo "== acct_gh_for_dir (internal resolver, used by the ghswitch feature) =="
+# Fresh account + directory, dedicated to these tests — 'work' is bound to
+# $TMP/code/work, which the earlier rename-detection section already moved
+# away from, so reusing it here would test a path that was never bound.
+mkdir -p "$TMP/code/outer/sub"
+"$DEVRIG" account add outer --email outer@work.com --gh-user outer-gh \
+  --dir "$TMP/code/outer" >/dev/null 2>&1
+check "resolves the bound dir itself" \
+  "$("$DEVRIG" account _gh-for-dir "$TMP/code/outer")" "outer-gh"
+check "resolves a subdirectory of the bound dir" \
+  "$("$DEVRIG" account _gh-for-dir "$TMP/code/outer/sub")" "outer-gh"
+check "unrelated directory resolves to nothing" \
+  "$("$DEVRIG" account _gh-for-dir "$TMP")" ""
+
+mkdir -p "$TMP/code/outer/nested"
+"$DEVRIG" account add nested --email nested@work.com --gh-user nested-gh \
+  --dir "$TMP/code/outer/nested" >/dev/null 2>&1
+check "nested binding is more specific and wins" \
+  "$("$DEVRIG" account _gh-for-dir "$TMP/code/outer/nested")" "nested-gh"
+check "outside the nested binding still resolves to the outer one" \
+  "$("$DEVRIG" account _gh-for-dir "$TMP/code/outer/sub")" "outer-gh"
+
+echo "== check: gh user verification =="
+FAKEBIN="$TMP/fakebin"; mkdir -p "$FAKEBIN"
+
+# No gh on PATH: check should say so, not blow up or silently pass. Use bare
+# system dirs (real core utils devrig itself needs — grep/sed/git — but gh is
+# always Homebrew-installed, never bundled there) rather than an empty PATH,
+# which would also break devrig's own use of those utilities.
+out="$(PATH="/usr/bin:/bin" "$DEVRIG" account check 2>&1)"
+saw "no gh installed is reported, not silent" "$out" "can't verify (gh CLI not installed)"
+
+# Fake gh reporting the account as logged in.
+cat > "$FAKEBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  echo "  ✓ Logged in to github.com account work-gh (keyring)"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$FAKEBIN/gh"
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account check 2>&1)"
+saw "logged-in gh user passes check" "$out" "gh user  : ok (work-gh logged in)"
+
+# Fake gh reporting a DIFFERENT set of logged-in accounts.
+cat > "$FAKEBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  echo "  ✓ Logged in to github.com account someone-unrelated (keyring)"
+  exit 0
+fi
+exit 1
+EOF
+if PATH="$FAKEBIN:$PATH" "$DEVRIG" account check >/dev/null 2>&1; then
+  bad "not-logged-in gh user fails check"
+else
+  ok "not-logged-in gh user fails check"
+fi
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account check 2>&1)"
+saw "check reports NOT LOGGED IN" "$out" "NOT LOGGED IN as work-gh"
+
 echo ""
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

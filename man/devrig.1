@@ -1,4 +1,4 @@
-.TH DEVRIG 1 "2026" "devrig 0.3.0" "User Commands"
+.TH DEVRIG 1 "2026" "devrig 0.5.0" "User Commands"
 .SH NAME
 devrig \- opt-in dev environment helpers
 .SH SYNOPSIS
@@ -124,6 +124,33 @@ Named
 rather than
 .B dotenv
 to avoid shadowing the python-dotenv CLI.
+.TP
+.B ghswitch
+On every
+.BR cd ,
+switch the GitHub CLI's
+.RB ( gh )
+active account to match whichever account (see
+.B ACCOUNTS
+below) is bound to the directory, provided that account has
+.B \-\-gh\-user
+set.
+.BR gh 's
+active account is a single setting shared by every terminal and session on
+the machine, so anything else using a different identity anywhere can
+silently flip it back; this corrects it each time you
+.B cd
+instead of leaving you to hit a confusing "Unauthorized" error and fix it by
+hand. Reads
+.BR gh 's
+own local config directly, so a plain
+.B cd
+elsewhere costs nothing \(em no network call unless the account actually
+needs to change.
+.B "Not included in a bare or 'all'"
+.BR "devrig enable" :
+unlike the other three features, this is global cross-session state, not a
+local shell convenience, so it must be enabled by name.
 .SH ACCOUNTS
 Work split across more than one git host account \(em a personal one and an
 employer's, say \(em normally means remembering to set
@@ -144,7 +171,7 @@ plus a keypair. devrig only ever appends, wrapped in
 sentinel comments, and never clobbers an existing key, host block, or identity
 file.
 .TP
-.B account add " <name> --email <email> [--name <git name>] [--host <host>] [--dir <path>]"
+.B account add " <name> --email <email> [--name <git name>] [--host <host>] [--dir <path>] [--gh-user <username>]"
 Generate an ed25519 keypair, append a
 .RI Host " <host>-<name>"
 alias, and write an identity file holding the git
@@ -159,8 +186,13 @@ to
 .IR github.com .
 With
 .I --dir
-the directory is bound in the same step. Prints the public key to add to the
-host account.
+the directory is bound in the same step. With
+.I --gh-user
+the account is paired with a
+.B gh
+CLI login, for the
+.B ghswitch
+feature. Prints the public key to add to the host account.
 .TP
 .B account bind " <name> <dir>"
 Use that account's identity for
@@ -183,7 +215,11 @@ pointing at a path that no longer exists, so git silently falls back to your
 global identity and the wrong name lands on every commit with no error anywhere.
 Where a repository exists under a binding,
 .B check
-confirms end to end that git really does resolve the expected address.
+confirms end to end that git really does resolve the expected address. For any
+account with
+.B \-\-gh\-user
+set, also verifies that user is actually logged in to
+.BR gh .
 .PP
 Keys are generated without a passphrase: this is a convenience tool, and a
 passphrase would need agent plumbing on every clone. They are protected by file

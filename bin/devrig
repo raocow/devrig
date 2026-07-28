@@ -2,7 +2,7 @@
 # devrig (formerly ezenv) — opt-in dev environment helpers.
 set -eo pipefail
 
-VERSION="0.4.0"
+VERSION="0.5.0"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
 # root (bin/..), so `share/devrig` is found whether run from Homebrew or source.
@@ -37,11 +37,14 @@ Features:
   autovenv       Auto-activate the nearest .venv when you cd into a repo
   pyf            Make bare 'python'/'pip' resolve to python3/pip3
   envup          Add an 'envup' command: export a .env into the current shell
-  all            Everything (default when no feature is given)
+  ghswitch       Auto-switch gh's active account when you cd into a bound
+                 directory with a --gh-user (see 'account' below) — NOT part
+                 of 'all', enable it by name
+  all            autovenv + pyf + envup (default when no feature is given)
 
 Accounts:
   devrig account add <name> --email <email> [--name <git name>]
-                           [--host <host>] [--dir <path>]
+                           [--host <host>] [--dir <path>] [--gh-user <user>]
   devrig account bind <name> <dir>   Use <name>'s identity in <dir> and below
   devrig account list                Show accounts and their bound directories
   devrig account key <name>          Print the public key to paste into the host
@@ -49,7 +52,8 @@ Accounts:
 
 Example:
   devrig enable autovenv      # then: exec zsh
-  devrig account add work --email me@work.com --dir ~/code/work
+  devrig account add work --email me@work.com --dir ~/code/work --gh-user work-gh
+  devrig enable ghswitch      # then: exec zsh
 EOF
 }
 
@@ -69,12 +73,18 @@ feature_file() {
     autovenv) echo "autovenv.zsh" ;;
     pyf)      echo "pyf.zsh" ;;
     envup)   echo "envup.zsh" ;;
+    ghswitch) echo "ghswitch.zsh" ;;
     *)        return 1 ;;
   esac
 }
 
 # Echo the requested features, expanding 'all', defaulting to all when empty,
 # and normalizing legacy names ('py-fallback' -> 'pyf') to their canonical form.
+# ghswitch is deliberately NOT part of 'all' or the bare-enable default: unlike
+# the other three (purely local-shell conveniences), it flips gh's ACTIVE
+# ACCOUNT — a single setting shared by every terminal and session on the
+# machine — so it's a bigger behavioral commitment that should be opted into
+# by name, not turned on silently by a first-time `devrig enable`.
 expand_features() {
   if [ "$#" -eq 0 ]; then echo "autovenv pyf envup"; return; fi
   local f out=""
@@ -216,6 +226,35 @@ _acct_binds() {  # "<name> <dir>" per binding
   sed -n 's/^# devrig:bind:\([^ ]*\) BEGIN \(.*\)$/\1 \2/p' "$GITCONFIG"
 }
 
+_acct_ghuser() {  # gh CLI username recorded for an account, empty if none
+  [ -f "$SSH_CONFIG" ] || return 0
+  sed -n "s/^# devrig:ghuser:$1 //p" "$SSH_CONFIG"
+}
+
+# Internal (not in `devrig help`): the gh username to activate for a
+# directory — the NEAREST bound account (longest matching bound dir wins,
+# same "current directory is authoritative" rule as autovenv) that has a
+# --gh-user recorded, or nothing if outside every bound scope or the nearest
+# one has none. Used by the ghswitch shell feature; also handy to call by
+# hand when checking why a directory isn't switching.
+acct_gh_for_dir() {
+  local target="${1:-$PWD}" best="" bestlen=-1 line n d
+  target="$(_acct_abspath "$target" 2>/dev/null)" || target="${1:-$PWD}"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    n="${line%% *}"; d="${line#* }"
+    case "$target" in
+      "$d"|"$d"/*)
+        [ "${#d}" -gt "$bestlen" ] && { best="$n"; bestlen="${#d}"; }
+        ;;
+    esac
+  done <<EOF
+$(_acct_binds)
+EOF
+  [ -n "$best" ] && _acct_ghuser "$best"
+  return 0
+}
+
 # Absolute PHYSICAL path, without requiring the directory to exist yet (you often
 # want to bind a directory you are about to clone into).
 #
@@ -242,16 +281,17 @@ _acct_abspath() {
 
 acct_add() {
   local name="${1:-}"; shift 2>/dev/null || true
-  local email="" gitname="" host="github.com" dir=""
+  local email="" gitname="" host="github.com" dir="" ghuser=""
   if ! _acct_valid_name "$name"; then
     echo "devrig: account name required (letters, digits, . _ - only)" >&2; return 2
   fi
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --email) email="${2:-}"; shift 2 || return 2 ;;
-      --name)  gitname="${2:-}"; shift 2 || return 2 ;;
-      --host)  host="${2:-}"; shift 2 || return 2 ;;
-      --dir)   dir="${2:-}"; shift 2 || return 2 ;;
+      --email)   email="${2:-}"; shift 2 || return 2 ;;
+      --name)    gitname="${2:-}"; shift 2 || return 2 ;;
+      --host)    host="${2:-}"; shift 2 || return 2 ;;
+      --dir)     dir="${2:-}"; shift 2 || return 2 ;;
+      --gh-user) ghuser="${2:-}"; shift 2 || return 2 ;;
       *) echo "devrig: unknown option '$1'" >&2; return 2 ;;
     esac
   done
@@ -302,6 +342,25 @@ acct_add() {
   else
     printf '[user]\n\tname = %s\n\temail = %s\n' "$gitname" "$email" > "$identity"
     echo "wrote identity: ${identity/#$HOME/~}  ($gitname <$email>)"
+  fi
+
+  # --gh-user pairs this account with a `gh` CLI login (see the ghswitch
+  # feature) so a bound directory keeps the right gh identity active — gh's
+  # own "active account" is a single global setting shared by every terminal,
+  # so anything else using a different identity anywhere can flip it back.
+  # Idempotent-append like everything else here: never overwrites a
+  # different value already recorded, tells you how to change it by hand.
+  if [ -n "$ghuser" ]; then
+    local existing; existing="$(_acct_ghuser "$name")"
+    if [ "$existing" = "$ghuser" ]; then
+      echo "gh user already recorded: $ghuser"
+    elif [ -n "$existing" ]; then
+      echo "devrig: gh user already set to '$existing' for '$name' — edit the" >&2
+      echo "  # devrig:ghuser:$name line in $SSH_CONFIG by hand to change it" >&2
+    else
+      printf '# devrig:ghuser:%s %s\n' "$name" "$ghuser" >> "$SSH_CONFIG"
+      echo "recorded gh user: $ghuser"
+    fi
   fi
 
   [ -n "$dir" ] && acct_bind "$name" "$dir"
@@ -359,10 +418,12 @@ acct_list() {
   local n line d
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    local identity who=""
+    local identity who="" ghuser
     identity="$(_acct_identity "$n")"
     [ -f "$identity" ] && who="$(sed -n 's/^[[:space:]]*email[[:space:]]*=[[:space:]]*//p' "$identity" | head -1)"
     echo "$n${who:+  <$who>}"
+    ghuser="$(_acct_ghuser "$n")"
+    [ -n "$ghuser" ] && echo "    gh: $ghuser"
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       [ "${line%% *}" = "$n" ] || continue
@@ -407,6 +468,18 @@ acct_check() {
       echo "  identity : ok <$expect_email>"
     else
       echo "  identity : MISSING ($identity)"; problems=$((problems + 1)); expect_email=""
+    fi
+
+    local ghuser; ghuser="$(_acct_ghuser "$n")"
+    if [ -n "$ghuser" ]; then
+      if ! command -v gh >/dev/null 2>&1; then
+        echo "  gh user  : $ghuser — can't verify (gh CLI not installed)"
+      elif gh auth status 2>&1 | grep -qF "account $ghuser"; then
+        echo "  gh user  : ok ($ghuser logged in)"
+      else
+        echo "  gh user  : NOT LOGGED IN as $ghuser (run: gh auth login --hostname github.com)"
+        problems=$((problems + 1))
+      fi
     fi
 
     while IFS= read -r line; do
@@ -464,6 +537,8 @@ cmd_account() {
     list)  shift 2>/dev/null || true; acct_list ;;
     key)   shift; acct_key "$@" ;;
     check) shift 2>/dev/null || true; acct_check ;;
+    # Internal, not in `devrig help` — used by the ghswitch shell feature.
+    _gh-for-dir) shift; acct_gh_for_dir "$@" ;;
     *) echo "devrig: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
   esac
 }
@@ -474,7 +549,7 @@ cmd_enable() {
   local changed=0 f file marker feats; feats="$(expand_features "$@")"
   for f in $feats; do
     if ! file="$(feature_file "$f")"; then
-      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; continue
+      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, ghswitch, all)" >&2; continue
     fi
     if feature_enabled "$f"; then
       echo "already enabled: $f"
@@ -496,7 +571,7 @@ cmd_disable() {
   # Require an explicit feature, so a bare `devrig disable` can't wipe everything
   # by accident. Use `devrig disable all` to turn them all off.
   if [ "$#" -eq 0 ]; then
-    echo "devrig: pick a feature to disable: autovenv, pyf, envup (or 'all')" >&2
+    echo "devrig: pick a feature to disable: autovenv, pyf, envup, ghswitch (or 'all')" >&2
     return 2
   fi
   [ -f "$RC" ] || { echo "nothing to do (no $RC)"; return 0; }
@@ -544,7 +619,7 @@ cmd_disable() {
 cmd_status() {
   echo "rc file : $RC"
   local f
-  for f in autovenv pyf envup; do
+  for f in autovenv pyf envup ghswitch; do
     if feature_enabled "$f"; then
       echo "  $f : enabled"
     else
@@ -581,7 +656,7 @@ cmd_init() {
   local f file
   for f in $(expand_features "$@"); do
     if ! file="$(feature_file "$f")"; then
-      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, all)" >&2; return 1
+      echo "devrig: unknown feature '$f' (try: autovenv, pyf, envup, ghswitch, all)" >&2; return 1
     fi
     printf 'source "%s/%s"\n' "$sd" "$file"
   done
