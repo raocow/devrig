@@ -2,7 +2,7 @@
 # devrig (formerly ezenv) — opt-in dev environment helpers.
 set -eo pipefail
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
 # root (bin/..), so `share/devrig` is found whether run from Homebrew or source.
@@ -30,6 +30,7 @@ Usage:
   devrig doctor                   Show current environment (python/pip/venv)
   devrig init [feature...]        Print the raw source line(s) — for eval or manual use
   devrig account <cmd>            Tie directories to different git/ssh accounts
+  devrig sleep on|off|status      Toggle 'sudo pmset -a disablesleep' (needs sudo)
   devrig version                  Print version
   devrig help                     Show this help
 
@@ -54,6 +55,8 @@ Example:
   devrig enable autovenv      # then: exec zsh
   devrig account add work --email me@work.com --dir ~/code/work --gh-user work-gh
   devrig enable ghswitch      # then: exec zsh
+  devrig sleep off            # keep the Mac awake (e.g. a long build/transfer)
+  devrig sleep on             # ...then put it back
 EOF
 }
 
@@ -651,6 +654,32 @@ cmd_doctor() {
   echo "VIRTUAL_ENV : ${VIRTUAL_ENV:-<none>}"
 }
 
+cmd_sleep() {
+  case "${1:-}" in
+    off)
+      sudo pmset -a disablesleep 1
+      echo "sleep disabled — this Mac won't sleep until 'devrig sleep on'"
+      ;;
+    on)
+      sudo pmset -a disablesleep 0
+      echo "sleep re-enabled"
+      ;;
+    status)
+      local v
+      v="$(pmset -g | awk '/SleepDisabled/ {print $2}')"
+      if [ "$v" = "1" ]; then
+        echo "sleep disabled (devrig sleep on to re-enable)"
+      else
+        echo "sleep enabled (normal)"
+      fi
+      ;;
+    *)
+      echo "devrig sleep: specify 'on', 'off', or 'status'" >&2
+      return 1
+      ;;
+  esac
+}
+
 cmd_init() {
   local sd; sd="$(share_dir)"
   local f file
@@ -669,6 +698,7 @@ case "${1:-help}" in
   doctor)               cmd_doctor ;;
   init)                 shift; cmd_init "$@" ;;
   account|accounts)     shift; cmd_account "$@" ;;
+  sleep)                shift; cmd_sleep "$@" ;;
   version|--version|-v) echo "devrig $VERSION" ;;
   help|--help|-h)       usage ;;
   *)                    usage >&2; exit 1 ;;

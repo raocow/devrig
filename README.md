@@ -86,6 +86,17 @@ passphrase would need agent plumbing on every clone. They're protected by file
 permissions only. Overrides for testing: `DEVRIG_SSH_CONFIG`, `DEVRIG_GITCONFIG`,
 `DEVRIG_SSH_KEY_DIR`.
 
+## Sleep
+
+```bash
+devrig sleep off       # sudo pmset -a disablesleep 1 — keep the Mac awake
+devrig sleep on        # sudo pmset -a disablesleep 0 — put it back
+devrig sleep status    # what's it set to right now
+```
+
+A memorable name for a command that's easy to forget the flag/argument order
+of. `off`/`on` needs `sudo` (same as the raw `pmset` call); `status` doesn't.
+
 ## Disable / uninstall
 
 ```bash
