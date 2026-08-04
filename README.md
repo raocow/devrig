@@ -70,7 +70,7 @@ clobbers an existing key, host block, or identity file.
 | Command | What it does |
 |---|---|
 | `account add <name> --email <e>` | Keypair + ssh `Host <host>-<name>` alias + `~/.gitconfig-<name>`. `--name` sets the git name (default: account name), `--host` the host (default: `github.com`), `--dir` binds in the same step, `--gh-user <username>` pairs it with a `gh` CLI login for the `ghswitch` feature. Prints the public key to paste into the host. |
-| `account bind <name> <dir>` | Use that identity in `<dir>` and below. The directory doesn't have to exist yet. |
+| `account bind <name> <dir>` | Use that identity in `<dir>` and below. The directory doesn't have to exist yet. If you're standing inside it and the account has a `--gh-user`, `ghswitch`'s effect applies immediately instead of waiting for the next `cd`. |
 | `account list` | Accounts, emails, and bound directories. |
 | `account key <name>` | Reprint the public key — for pasting into the host, or authorizing it against an SSO-enforcing org. |
 | `account check` | **The one worth running.** Verifies every binding still applies (plus, for any account with `--gh-user`, that it's actually logged in to `gh`); non-zero exit if not. |

@@ -1,4 +1,4 @@
-.TH DEVRIG 1 "2026" "devrig 0.5.0" "User Commands"
+.TH DEVRIG 1 "2026" "devrig 0.6.0" "User Commands"
 .SH NAME
 devrig \- opt-in dev environment helpers
 .SH SYNOPSIS
@@ -197,7 +197,15 @@ feature. Prints the public key to add to the host account.
 .B account bind " <name> <dir>"
 Use that account's identity for
 .I <dir>
-and everything under it. The directory need not exist yet.
+and everything under it. The directory need not exist yet. If run from
+inside
+.I <dir>
+and the account has
+.B \-\-gh\-user
+set, the
+.B ghswitch
+effect applies immediately instead of waiting for the next
+.BR cd .
 .TP
 .B account list
 Show each account, its email, and the directories bound to it.

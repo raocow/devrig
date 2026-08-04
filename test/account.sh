@@ -164,6 +164,31 @@ fi
 out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account check 2>&1)"
 saw "check reports NOT LOGGED IN" "$out" "NOT LOGGED IN as work-gh"
 
+echo "== bind switches gh immediately when run from inside the bound dir =="
+SWITCHED_TO="$TMP/switched-to"
+cat > "$FAKEBIN/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = auth ] && [ "\$2" = switch ]; then
+  echo "\$4" > "$SWITCHED_TO"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$FAKEBIN/gh"
+
+mkdir -p "$TMP/code/instant"
+rm -f "$SWITCHED_TO"
+out="$(cd "$TMP/code/instant" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/instant" 2>&1)"
+saw "bind reports the immediate switch" "$out" "switched gh's active account to work-gh"
+check "gh auth switch invoked with the right user" "$(cat "$SWITCHED_TO" 2>/dev/null)" "work-gh"
+
+# Binding a DIFFERENT directory than the one you're standing in shouldn't
+# trigger a switch — only relevant if you're actually inside what you bound.
+mkdir -p "$TMP/code/elsewhere" "$TMP/code/nothere"
+rm -f "$SWITCHED_TO"
+(cd "$TMP/code/nothere" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/elsewhere" >/dev/null 2>&1)
+check "no switch when not standing inside the bound dir" "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
+
 echo ""
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

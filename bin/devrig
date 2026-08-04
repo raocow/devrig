@@ -2,7 +2,7 @@
 # devrig (formerly ezenv) — opt-in dev environment helpers.
 set -eo pipefail
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 
 # Resolve this script's real location (following symlinks), then the keg/repo
 # root (bin/..), so `share/devrig` is found whether run from Homebrew or source.
@@ -406,6 +406,24 @@ acct_bind() {
   echo "bound: ${dir/#$HOME/~} -> $name"
   [ -d "$dir" ] || echo "  note: that directory does not exist yet; the binding" \
                         "activates once you clone into it."
+
+  # If you're standing inside the directory you just bound, switch gh's
+  # active account right now instead of waiting for the next `cd` — the
+  # ghswitch feature's chpwd hook only fires on an actual directory change,
+  # which binding from inside the target directory never triggers, so
+  # without this the binding looks like it "didn't work" until you leave
+  # and come back.
+  local ghuser here
+  ghuser="$(_acct_ghuser "$name")"
+  if [ -n "$ghuser" ] && command -v gh >/dev/null 2>&1; then
+    here="$(_acct_abspath "$PWD")"
+    case "$here" in
+      "$dir"|"$dir"/*)
+        gh auth switch --user "$ghuser" >/dev/null 2>&1 \
+          && echo "  switched gh's active account to $ghuser"
+        ;;
+    esac
+  fi
   return 0
 }
 
