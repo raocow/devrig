@@ -189,6 +189,53 @@ rm -f "$SWITCHED_TO"
 (cd "$TMP/code/nothere" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/elsewhere" >/dev/null 2>&1)
 check "no switch when not standing inside the bound dir" "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
 
+echo "== _suggest-for-dir (internal resolver, used by ghswitch's suggestion) =="
+mkdir -p "$TMP/code/unbound"
+
+# Only work-gh logged in -> suggest just 'work'.
+cat > "$FAKEBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  echo "  Logged in to github.com account work-gh (keyring)"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$FAKEBIN/gh"
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _suggest-for-dir "$TMP/code/unbound" 2>&1)"
+check "single logged-in candidate suggested" "$out" "work"
+
+# Two devrig-known accounts both logged in -> both suggested, none picked for you.
+cat > "$FAKEBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  echo "  Logged in to github.com account work-gh (keyring)"
+  echo "  Logged in to github.com account outer-gh (keyring)"
+  exit 0
+fi
+exit 1
+EOF
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _suggest-for-dir "$TMP/code/unbound" 2>&1)"
+saw "multiple candidates: work listed"  "$out" "work"
+saw "multiple candidates: outer listed" "$out" "outer"
+check "multiple candidates: exactly two lines" "$(printf '%s\n' "$out" | grep -c .)" "2"
+
+# No devrig-known account logged in -> no suggestion at all.
+cat > "$FAKEBIN/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  echo "  Logged in to github.com account someone-unrelated (keyring)"
+  exit 0
+fi
+exit 1
+EOF
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _suggest-for-dir "$TMP/code/unbound" 2>&1)"
+check "no candidates -> no suggestion" "$out" ""
+
+# Already-bound directory -> no suggestion regardless of who's logged in.
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _suggest-for-dir "$TMP/code/work" 2>&1)"
+check "already-bound directory -> no suggestion" "$out" ""
+
 echo ""
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

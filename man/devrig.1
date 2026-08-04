@@ -147,6 +147,18 @@ own local config directly, so a plain
 .B cd
 elsewhere costs nothing \(em no network call unless the account actually
 needs to change.
+.PP
+For an
+.B unbound
+directory, it suggests rather than acts: if one or more of your accounts are
+already logged into
+.B gh
+but none is bound, a one-line hint naming them is printed (once per
+directory per shell session, not on every
+.B cd
+back into it) instead of a silent guess \(em you still run
+.B "account bind"
+yourself, and choose which account if there is more than one.
 .B "Not included in a bare or 'all'"
 .BR "devrig enable" :
 unlike the other three features, this is global cross-session state, not a

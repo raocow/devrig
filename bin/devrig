@@ -255,6 +255,31 @@ EOF
   return 0
 }
 
+# acct_suggest_for_dir <dir> — devrig accounts (with a --gh-user set) that are
+# currently logged into gh, when <dir> isn't bound to anything at all. Purely
+# informational: never binds or switches anything itself — this exists so
+# ghswitch can SUGGEST a bind instead of guessing which of possibly several
+# logged-in accounts is the right one for an unbound directory (guessing
+# wrong here means silently switching identity, which is exactly the mistake
+# this whole feature exists to prevent). Prints one candidate account name
+# per line; nothing if already bound, gh isn't installed, or no candidates.
+acct_suggest_for_dir() {
+  local dir="${1:-$PWD}"
+  [ -z "$(acct_gh_for_dir "$dir")" ] || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  local status; status="$(gh auth status 2>&1)"
+  local names n ghuser
+  names="$(_acct_names)"
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    ghuser="$(_acct_ghuser "$n")"
+    [ -n "$ghuser" ] || continue
+    case "$status" in *"account $ghuser"*) echo "$n" ;; esac
+  done <<EOF
+$names
+EOF
+}
+
 # Absolute PHYSICAL path, without requiring the directory to exist yet (you often
 # want to bind a directory you are about to clone into).
 #
@@ -557,6 +582,7 @@ cmd_account() {
     check) shift 2>/dev/null || true; acct_check ;;
     # Internal, not in `devrig help` — used by the ghswitch shell feature.
     _gh-for-dir) shift; acct_gh_for_dir "$@" ;;
+    _suggest-for-dir) shift; acct_suggest_for_dir "$@" ;;
     *) echo "devrig: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
   esac
 }
