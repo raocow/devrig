@@ -1,4 +1,4 @@
-.TH DEVRIG 1 "2026" "devrig 0.5.0" "User Commands"
+.TH DEVRIG 1 "2026" "devrig 0.6.0" "User Commands"
 .SH NAME
 devrig \- opt-in dev environment helpers
 .SH SYNOPSIS
@@ -47,6 +47,20 @@ Print the raw source line(s) for manual use or
 Tie directories to different git/ssh accounts. See
 .B ACCOUNTS
 below.
+.TP
+.B sleep " on|off|status"
+.B off
+runs
+.BR "sudo pmset -a disablesleep 1" ,
+.B on
+runs
+.BR "sudo pmset -a disablesleep 0" ,
+.B status
+reports which (no
+.B sudo
+needed for
+.BR status ).
+A memorable name for a command whose flag/argument order is easy to forget.
 .TP
 .B version
 Print the version.
