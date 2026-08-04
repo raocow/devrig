@@ -161,6 +161,27 @@ own local config directly, so a plain
 .B cd
 elsewhere costs nothing \(em no network call unless the account actually
 needs to change.
+.PP
+An
+.B unbound
+directory binds itself, on evidence rather than a guess. The accounts differ
+precisely in which repositories they can reach, so this checks which of them
+can actually
+.B push
+to the directory's origin repository and binds that one, reporting what it
+did and how to change it. Push access
+.RB ( ADMIN / MAINTAIN / WRITE )
+specifically, not mere visibility: on a public repository every logged-in
+account gets
+.BR READ ,
+so a visibility check would match the wrong account \(em a public repository
+you do not own is never auto-bound. Nothing happens outside a GitHub
+repository, or when no account has push access. Each account is probed with
+its own token via
+.BR GH_TOKEN ,
+so probing never disturbs the active account. That probe costs a network
+call, so it is gated: unbound directories only, once per directory per shell
+session.
 .B "Not included in a bare or 'all'"
 .BR "devrig enable" :
 unlike the other three features, this is global cross-session state, not a
@@ -211,7 +232,15 @@ feature. Prints the public key to add to the host account.
 .B account bind " <name> <dir>"
 Use that account's identity for
 .I <dir>
-and everything under it. The directory need not exist yet.
+and everything under it. The directory need not exist yet. If run from
+inside
+.I <dir>
+and the account has
+.B \-\-gh\-user
+set, the
+.B ghswitch
+effect applies immediately instead of waiting for the next
+.BR cd .
 .TP
 .B account list
 Show each account, its email, and the directories bound to it.

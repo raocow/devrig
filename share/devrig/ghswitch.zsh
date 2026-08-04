@@ -1,37 +1,94 @@
-# devrig: auto-switch gh's active account when you cd into a directory bound
-# to an account with a recorded gh user (devrig account add ... --gh-user
-# <username>).
+# devrig: point the GitHub CLI at the right account for whatever directory
+# this shell is in, using a PER-SHELL token rather than gh's global setting.
 #
-# gh's "active account" is a single GLOBAL setting shared by every terminal
-# and session on the machine — anything else using a different gh identity
-# anywhere (another terminal, another agent session, a script) can silently
-# flip it back. This corrects it for wherever you currently are, each time
-# you cd, instead of leaving you to notice a confusing "Unauthorized" error
-# and fix it by hand.
+# Why per-shell: gh's "active account" (what `gh auth switch` sets) is a
+# single setting shared by every terminal, session, and background agent on
+# the machine. With more than one account in play, any of them switching it
+# yanks the identity out from under all the others mid-task — the failure
+# looks like a baffling "Unauthorized"/"Enterprise Managed User" error in a
+# session that never touched its own auth. An earlier version of this file
+# switched globally on every cd and so was itself a cause of that.
 #
-# Only acts entering a bound directory; leaving one does nothing on purpose —
-# there's no sane "restore," since the active account is genuinely shared
-# global state that this feature can only correct opportunistically, not own.
+# Instead this exports GH_TOKEN for THIS shell only. gh honors it over the
+# active account, so each terminal gets its own identity, concurrent sessions
+# can't clobber each other, and gh's global setting is never written at all.
+# Leaving a bound directory unsets it again — a clean restore, which the
+# global version fundamentally couldn't do.
 #
-# Reads gh's own local hosts.yml directly (no network call) to see who's
-# currently active, so a plain cd into an unrelated directory costs nothing;
-# `gh auth switch` only runs when the account actually needs to change.
+# Tradeoff worth knowing: the token sits in this shell's environment (visible
+# to child processes and to `ps -E` as your own user) rather than only in the
+# keychain. That's the standard GH_TOKEN mechanism CI uses, but it is a real
+# difference from the keychain-only default.
+#
+# Note git is unaffected either way: it authenticates through the osxkeychain
+# credential helper (or an ssh alias — see `devrig account`), not through gh's
+# active account, so `git push`/`git fetch` never depended on this.
+#
+# Unbound directories are bound AUTOMATICALLY, on evidence rather than a
+# guess: the accounts differ in which repos they can reach, so the first one
+# with PUSH access to this repo is bound and reported. Nothing happens when
+# no account has push access (a public repo you only have READ on is never
+# auto-bound) or outside a GitHub repo. That probe costs a network call, so
+# it runs only for an unbound directory, once per directory per shell.
 #
 # Enable by adding to ~/.zshrc:
 #   source "$(brew --prefix)/share/devrig/ghswitch.zsh"
+
+typeset -gA _devrig_ghswitch_seen
+typeset -gA _devrig_tok_cache
+typeset -g  _devrig_gh_account=""
 
 _devrig_ghswitch() {
   command -v gh >/dev/null 2>&1 || return 0
   command -v devrig >/dev/null 2>&1 || return 0
 
-  local want; want="$(devrig account _gh-for-dir "$PWD" 2>/dev/null)"
-  [[ -n "$want" ]] || return 0
+  # `command devrig` throughout: the wrapper function below calls back into
+  # this hook, so going through it here would recurse forever.
+  local want; want="$(command devrig account _gh-for-dir "$PWD" 2>/dev/null)"
 
-  local hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
-  local active; active="$(sed -n 's/^[[:space:]]*user:[[:space:]]*//p' "$hosts" 2>/dev/null | head -1)"
-  [[ "$active" == "$want" ]] && return 0
+  if [[ -n "$want" ]]; then
+    [[ "$_devrig_gh_account" == "$want" ]] && return 0
+    local tok="${_devrig_tok_cache[$want]:-}"
+    if [[ -z "$tok" ]]; then
+      tok="$(gh auth token --user "$want" 2>/dev/null)"
+      [[ -n "$tok" ]] && _devrig_tok_cache[$want]="$tok"
+    fi
+    # Not logged in as that account — leave whatever's in effect alone rather
+    # than half-applying. `devrig account check` reports this properly.
+    [[ -n "$tok" ]] || return 0
+    export GH_TOKEN="$tok"
+    _devrig_gh_account="$want"
+    return 0
+  fi
 
-  gh auth switch --user "$want" >/dev/null 2>&1
+  # Unbound: drop any token this hook set, so gh falls back to its own active
+  # account instead of silently using the last directory's identity.
+  if [[ -n "$_devrig_gh_account" ]]; then
+    unset GH_TOKEN
+    _devrig_gh_account=""
+  fi
+
+  [[ -n "${_devrig_ghswitch_seen[$PWD]:-}" ]] && return 0
+  _devrig_ghswitch_seen[$PWD]=1
+  local pick
+  pick="$(command devrig account _access-for-dir "$PWD" first 2>/dev/null)"
+  [[ -n "$pick" ]] || return 0
+  local root; root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [[ -n "$root" ]] || return 0
+  command devrig account bind "$pick" "$root" >/dev/null 2>&1 || return 0
+  print -u2 "devrig: bound ${root:t} to '$pick' (the account with push access here) — change it with: devrig account bind <name> ${root}"
+  _devrig_ghswitch   # apply the binding we just made to this shell
+}
+
+# `devrig account bind`/`add --dir` can change which account applies to the
+# current directory, but it runs as a subprocess and so can't export into this
+# shell. Re-running the hook afterward applies it immediately, instead of the
+# binding appearing to do nothing until the next cd.
+devrig() {
+  command devrig "$@"
+  local rc=$?
+  _devrig_ghswitch
+  return $rc
 }
 
 autoload -U add-zsh-hook 2>/dev/null

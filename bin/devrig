@@ -258,6 +258,65 @@ EOF
   return 0
 }
 
+# _acct_repo_slug <dir> — "owner/repo" for <dir>'s origin remote, if it's a
+# GitHub one. Handles every remote form in practice: https, scp-style
+# git@host:owner/repo, ssh://, with or without a trailing .git — including
+# devrig's OWN `github.com-<account>` ssh aliases, which are still github.com.
+# Fails (returns 1, prints nothing) for a non-git dir, no origin, or a
+# non-GitHub host.
+_acct_repo_slug() {
+  local dir="${1:-$PWD}" url u host path
+  url="$(git -C "$dir" remote get-url origin 2>/dev/null)" || return 1
+  [ -n "$url" ] || return 1
+  u="${url#*://}"          # drop scheme if present
+  u="${u#*@}"              # drop user@ if present
+  host="${u%%[:/]*}"
+  path="${u#*[:/]}"
+  path="${path%.git}"
+  case "$host" in github.com|github.com-*) ;; *) return 1 ;; esac
+  case "$path" in */*) ;; *) return 1 ;; esac
+  printf '%s\n' "$path"
+}
+
+# acct_access_for_dir <dir> [first] — devrig accounts (with a --gh-user set)
+# that have PUSH access to <dir>'s origin repo. This is the signal that
+# actually matters, and the reason this whole feature exists: the accounts
+# differ precisely in which repos they can reach, so "who can push here" is a
+# checkable fact rather than a guess. With `first`, stops at the first match.
+#
+# Checked per-account WITHOUT touching gh's global active account: each
+# account's own token is passed via GH_TOKEN for that one call, so probing
+# never disturbs whatever the rest of the machine is doing.
+#
+# PUSH access specifically, not mere visibility — on any PUBLIC repo every
+# logged-in account gets READ, so a visibility check would call every public
+# repo ambiguous. ADMIN/MAINTAIN/WRITE is what distinguishes "this is my
+# account for this repo" from "I can see it like anyone else".
+acct_access_for_dir() {
+  local dir="${1:-$PWD}" first_only="${2:-}"
+  local slug; slug="$(_acct_repo_slug "$dir")" || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  local n ghuser tok perm
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    ghuser="$(_acct_ghuser "$n")"
+    [ -n "$ghuser" ] || continue
+    tok="$(gh auth token --user "$ghuser" 2>/dev/null)" || continue
+    [ -n "$tok" ] || continue
+    perm="$(GH_TOKEN="$tok" gh repo view "$slug" --json viewerPermission \
+      --jq .viewerPermission 2>/dev/null)" || continue
+    case "$perm" in
+      ADMIN|MAINTAIN|WRITE)
+        echo "$n"
+        [ -n "$first_only" ] && return 0
+        ;;
+    esac
+  done <<EOF
+$(_acct_names)
+EOF
+  return 0
+}
+
 # Absolute PHYSICAL path, without requiring the directory to exist yet (you often
 # want to bind a directory you are about to clone into).
 #
@@ -409,6 +468,14 @@ acct_bind() {
   echo "bound: ${dir/#$HOME/~} -> $name"
   [ -d "$dir" ] || echo "  note: that directory does not exist yet; the binding" \
                         "activates once you clone into it."
+
+  # Deliberately does NOT run `gh auth switch` to apply this immediately.
+  # That setting is global to the whole machine, so writing it here would
+  # yank the identity out from under every other terminal and agent session
+  # currently working as a different account. Applying the new binding to the
+  # shell you're standing in is the ghswitch feature's job, and it does it
+  # per-shell via GH_TOKEN (its `devrig` wrapper re-runs the hook right after
+  # this command returns, since a subprocess can't export into its parent).
   return 0
 }
 
@@ -542,6 +609,7 @@ cmd_account() {
     check) shift 2>/dev/null || true; acct_check ;;
     # Internal, not in `devrig help` — used by the ghswitch shell feature.
     _gh-for-dir) shift; acct_gh_for_dir "$@" ;;
+    _access-for-dir) shift; acct_access_for_dir "$@" ;;
     *) echo "devrig: unknown account command '$1' (add, bind, list, key, check)" >&2; return 2 ;;
   esac
 }

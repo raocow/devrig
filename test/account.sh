@@ -164,6 +164,92 @@ fi
 out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account check 2>&1)"
 saw "check reports NOT LOGGED IN" "$out" "NOT LOGGED IN as work-gh"
 
+echo "== bind never touches gh's global active account =="
+# gh's active account is machine-wide: writing it from here would yank the
+# identity out from under every other terminal/agent session. Applying a new
+# binding to the current shell is ghswitch's job, per-shell via GH_TOKEN.
+SWITCHED_TO="$TMP/switched-to"
+cat > "$FAKEBIN/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = auth ] && [ "\$2" = switch ]; then
+  echo "\$4" > "$SWITCHED_TO"
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$FAKEBIN/gh"
+
+mkdir -p "$TMP/code/instant"
+rm -f "$SWITCHED_TO"
+out="$(cd "$TMP/code/instant" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/instant" 2>&1)"
+saw "bind still reports the binding" "$out" "bound:"
+check "bind does NOT switch the global account, even from inside the dir" \
+  "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
+
+mkdir -p "$TMP/code/elsewhere" "$TMP/code/nothere"
+rm -f "$SWITCHED_TO"
+(cd "$TMP/code/nothere" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/elsewhere" >/dev/null 2>&1)
+check "no global switch when binding another dir either" "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
+
+echo "== _access-for-dir (which account can actually push here) =="
+# A real git repo with a real origin, so the remote parsing is exercised for
+# real rather than mocked. Only `gh` itself is faked.
+mkdir -p "$TMP/code/probe"
+git init -q "$TMP/code/probe"
+git -C "$TMP/code/probe" remote add origin https://github.com/acme/widget.git
+
+# work-gh has WRITE, outer-gh only READ. READ must NOT count: on any public
+# repo every logged-in account gets READ, so counting it would make every
+# public repo look like a match for the wrong account.
+mk_gh() {  # mk_gh <perm-for-work-gh> <perm-for-outer-gh>
+  cat > "$FAKEBIN/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = auth ] && [ "\$2" = token ]; then
+  echo "tok-\$4"; exit 0
+fi
+if [ "\$1" = repo ] && [ "\$2" = view ]; then
+  case "\$GH_TOKEN" in
+    tok-work-gh)  echo "$1"; exit 0 ;;
+    tok-outer-gh) echo "$2"; exit 0 ;;
+  esac
+  exit 1
+fi
+exit 1
+EOF
+  chmod +x "$FAKEBIN/gh"
+}
+
+mk_gh WRITE READ
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/probe" 2>&1)"
+check "push access -> account returned" "$out" "work"
+
+mk_gh READ READ
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/probe" 2>&1)"
+check "read-only everywhere -> no match (public-repo guard)" "$out" ""
+
+mk_gh ADMIN WRITE
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/probe" 2>&1)"
+check "two with push access -> both listed" "$(printf '%s\n' "$out" | grep -c .)" "2"
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/probe" first 2>&1)"
+check "'first' short-circuits to one" "$(printf '%s\n' "$out" | grep -c .)" "1"
+
+# Non-GitHub and non-repo directories must not probe at all.
+mk_gh ADMIN ADMIN
+git init -q "$TMP/code/gitlab"
+git -C "$TMP/code/gitlab" remote add origin https://gitlab.com/acme/widget.git
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/gitlab" 2>&1)"
+check "non-GitHub remote -> no match" "$out" ""
+mkdir -p "$TMP/code/plaindir"
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/plaindir" 2>&1)"
+check "not a git repo -> no match" "$out" ""
+
+# devrig's own ssh alias form is still github.com and must be understood.
+git init -q "$TMP/code/aliasremote"
+git -C "$TMP/code/aliasremote" remote add origin git@github.com-work:acme/widget.git
+mk_gh WRITE READ
+out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account _access-for-dir "$TMP/code/aliasremote" 2>&1)"
+check "github.com-<account> ssh alias understood" "$out" "work"
+
 echo ""
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
