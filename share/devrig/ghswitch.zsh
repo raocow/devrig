@@ -20,16 +20,19 @@
 # Enable by adding to ~/.zshrc:
 #   source "$(brew --prefix)/share/devrig/ghswitch.zsh"
 #
-# Unbound directories: SUGGESTS, never auto-binds. If a directory isn't tied
-# to any devrig account but one or more of your already-logged-in gh accounts
-# are candidates, a one-line hint is printed (once per directory per shell
-# session, not on every cd back into it) naming them — you still run the
-# bind yourself, and pick which one if there's more than one. Auto-picking
-# would mean silently switching git/gh identity on a guess, which is exactly
-# the mistake this feature exists to prevent; with zero candidates it says
-# nothing at all.
+# Unbound directories are bound AUTOMATICALLY, on evidence rather than a
+# guess: the reason this feature exists at all is that the accounts differ in
+# which repos they can reach, so "which of my accounts can actually push to
+# this repo" is a checkable fact. The first account with push access is bound
+# and reported, along with how to change it. Nothing happens when no account
+# has push access (including every repo you merely have READ on, so a public
+# repo you don't own is never auto-bound), or outside a GitHub repo.
+#
+# The access probe costs a network call per account, so it's gated hard: only
+# for a directory already known to be unbound, only inside a git repo with a
+# GitHub origin, and only once per directory per shell session.
 
-typeset -gA _devrig_ghswitch_suggested
+typeset -gA _devrig_ghswitch_seen
 
 _devrig_ghswitch() {
   command -v gh >/dev/null 2>&1 || return 0
@@ -44,19 +47,22 @@ _devrig_ghswitch() {
     return 0
   fi
 
-  # Unbound: suggest at most once per directory per shell session — this
-  # calls `gh auth status`, which isn't free like the bound-path check above,
-  # so it only runs at all once we already know there's no binding.
-  [[ -n "${_devrig_ghswitch_suggested[$PWD]:-}" ]] && return 0
-  _devrig_ghswitch_suggested[$PWD]=1
-  local -a candidates
-  candidates=(${(f)"$(devrig account _suggest-for-dir "$PWD" 2>/dev/null)"})
-  (( ${#candidates[@]} == 0 )) && return 0
-  if (( ${#candidates[@]} == 1 )); then
-    print -u2 "devrig: '$PWD' isn't bound to any account, but ${candidates[1]} is logged into gh — bind it? devrig account bind ${candidates[1]} ."
-  else
-    print -u2 "devrig: '$PWD' isn't bound to any account. Logged into gh: ${(j:, :)candidates} — bind one? devrig account bind <name> ."
-  fi
+  # Unbound: bind whichever account can actually push here. At most once per
+  # directory per shell session — unlike the bound-path check above, this
+  # probe hits the network, so it only runs once we already know there's no
+  # binding, and never repeats for the same directory in this shell.
+  [[ -n "${_devrig_ghswitch_seen[$PWD]:-}" ]] && return 0
+  _devrig_ghswitch_seen[$PWD]=1
+  local pick
+  pick="$(devrig account _access-for-dir "$PWD" first 2>/dev/null)"
+  [[ -n "$pick" ]] || return 0
+  # Bind the repo ROOT, not $PWD: the identity belongs to the repository, so
+  # binding a subdirectory you happened to be standing in would leave its
+  # siblings unbound and re-probing.
+  local root; root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [[ -n "$root" ]] || return 0
+  devrig account bind "$pick" "$root" >/dev/null 2>&1 || return 0
+  print -u2 "devrig: bound ${root:t} to '$pick' (the account with push access here) — change it with: devrig account bind <name> ${root}"
 }
 
 autoload -U add-zsh-hook 2>/dev/null

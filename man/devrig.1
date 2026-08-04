@@ -148,17 +148,26 @@ own local config directly, so a plain
 elsewhere costs nothing \(em no network call unless the account actually
 needs to change.
 .PP
-For an
+An
 .B unbound
-directory, it suggests rather than acts: if one or more of your accounts are
-already logged into
-.B gh
-but none is bound, a one-line hint naming them is printed (once per
-directory per shell session, not on every
-.B cd
-back into it) instead of a silent guess \(em you still run
-.B "account bind"
-yourself, and choose which account if there is more than one.
+directory binds itself, on evidence rather than a guess. The accounts differ
+precisely in which repositories they can reach, so this checks which of them
+can actually
+.B push
+to the directory's origin repository and binds that one, reporting what it
+did and how to change it. Push access
+.RB ( ADMIN / MAINTAIN / WRITE )
+specifically, not mere visibility: on a public repository every logged-in
+account gets
+.BR READ ,
+so a visibility check would match the wrong account \(em a public repository
+you do not own is never auto-bound. Nothing happens outside a GitHub
+repository, or when no account has push access. Each account is probed with
+its own token via
+.BR GH_TOKEN ,
+so probing never disturbs the active account. That probe costs a network
+call, so it is gated: unbound directories only, once per directory per shell
+session.
 .B "Not included in a bare or 'all'"
 .BR "devrig enable" :
 unlike the other three features, this is global cross-session state, not a
