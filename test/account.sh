@@ -164,7 +164,10 @@ fi
 out="$(PATH="$FAKEBIN:$PATH" "$DEVRIG" account check 2>&1)"
 saw "check reports NOT LOGGED IN" "$out" "NOT LOGGED IN as work-gh"
 
-echo "== bind switches gh immediately when run from inside the bound dir =="
+echo "== bind never touches gh's global active account =="
+# gh's active account is machine-wide: writing it from here would yank the
+# identity out from under every other terminal/agent session. Applying a new
+# binding to the current shell is ghswitch's job, per-shell via GH_TOKEN.
 SWITCHED_TO="$TMP/switched-to"
 cat > "$FAKEBIN/gh" <<EOF
 #!/usr/bin/env bash
@@ -179,15 +182,14 @@ chmod +x "$FAKEBIN/gh"
 mkdir -p "$TMP/code/instant"
 rm -f "$SWITCHED_TO"
 out="$(cd "$TMP/code/instant" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/instant" 2>&1)"
-saw "bind reports the immediate switch" "$out" "switched gh's active account to work-gh"
-check "gh auth switch invoked with the right user" "$(cat "$SWITCHED_TO" 2>/dev/null)" "work-gh"
+saw "bind still reports the binding" "$out" "bound:"
+check "bind does NOT switch the global account, even from inside the dir" \
+  "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
 
-# Binding a DIFFERENT directory than the one you're standing in shouldn't
-# trigger a switch — only relevant if you're actually inside what you bound.
 mkdir -p "$TMP/code/elsewhere" "$TMP/code/nothere"
 rm -f "$SWITCHED_TO"
 (cd "$TMP/code/nothere" && PATH="$FAKEBIN:$PATH" "$DEVRIG" account bind work "$TMP/code/elsewhere" >/dev/null 2>&1)
-check "no switch when not standing inside the bound dir" "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
+check "no global switch when binding another dir either" "$(cat "$SWITCHED_TO" 2>/dev/null)" ""
 
 echo "== _access-for-dir (which account can actually push here) =="
 # A real git repo with a real origin, so the remote parsing is exercised for

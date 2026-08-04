@@ -466,23 +466,13 @@ acct_bind() {
   [ -d "$dir" ] || echo "  note: that directory does not exist yet; the binding" \
                         "activates once you clone into it."
 
-  # If you're standing inside the directory you just bound, switch gh's
-  # active account right now instead of waiting for the next `cd` — the
-  # ghswitch feature's chpwd hook only fires on an actual directory change,
-  # which binding from inside the target directory never triggers, so
-  # without this the binding looks like it "didn't work" until you leave
-  # and come back.
-  local ghuser here
-  ghuser="$(_acct_ghuser "$name")"
-  if [ -n "$ghuser" ] && command -v gh >/dev/null 2>&1; then
-    here="$(_acct_abspath "$PWD")"
-    case "$here" in
-      "$dir"|"$dir"/*)
-        gh auth switch --user "$ghuser" >/dev/null 2>&1 \
-          && echo "  switched gh's active account to $ghuser"
-        ;;
-    esac
-  fi
+  # Deliberately does NOT run `gh auth switch` to apply this immediately.
+  # That setting is global to the whole machine, so writing it here would
+  # yank the identity out from under every other terminal and agent session
+  # currently working as a different account. Applying the new binding to the
+  # shell you're standing in is the ghswitch feature's job, and it does it
+  # per-shell via GH_TOKEN (its `devrig` wrapper re-runs the hook right after
+  # this command returns, since a subprocess can't export into its parent).
   return 0
 }
 
